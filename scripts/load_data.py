@@ -6,7 +6,7 @@ Scan a directory containing `safe/` and `unsafe/` subfolders (including nested f
 and produce a CSV manifest with relative paths.
 
 Usage:
-  python load_data.py --input_dir data/train --out manifests/train_manifest.csv
+  python scripts/load_data.py --input_dir data/train --out preprocessed/train_processed.csv
 """
 from pathlib import Path
 import pandas as pd
