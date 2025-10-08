@@ -2,87 +2,46 @@
 """
 train_model.py
 
-Train a Logistic Regression classifier on PHP code samples located in:
-  train/safe/
-  train/unsafe/
+Train a Logistic Regression classifier on preprocessed PHP code CSV.
 
 Usage (Windows):
-  python scripts/train_model.py --input_dir data/train --model_out models/logreg_model.pkl --vectorizer_out models/tfidf_vectorizer.pkl
+  python scripts/train_model.py --input preprocessed/train_processed.csv --model_out models/logreg_model.pkl --vectorizer_out models/tfidf_vectorizer.pkl
 """
 
-import os
 import pandas as pd
 import argparse
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, accuracy_score
-from pathlib import Path
 import pickle
-from tqdm import tqdm  # ✅ NEW: for progress bars
-
-def read_file_content(filepath):
-    """Read the contents of a code file safely."""
-    try:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
-    except Exception as e:
-        print(f"[WARN] Could not read {filepath}: {e}")
-        return ""
-
-def load_dataset(input_dir):
-    """Walk through train/safe and train/unsafe folders and build a labeled dataset."""
-    data = []
-    input_dir = Path(input_dir)
-
-    for label_name, label in [("safe", 0), ("unsafe", 1)]:
-        folder = input_dir / label_name
-        if not folder.exists():
-            print(f"[WARN] Folder not found: {folder}")
-            continue
-
-        files = [os.path.join(root, file)
-                 for root, _, filenames in os.walk(folder)
-                 for file in filenames if file.endswith(".php")]
-
-        print(f"\n📂 Loading {label_name} files ({len(files)} found)...")
-
-        # ✅ Add a progress bar when reading files
-        for path in tqdm(files, desc=f"Reading {label_name}", ncols=80):
-            code = read_file_content(path)
-            if code.strip():
-                data.append({"filename": str(path), "code": code, "label": label})
-    
-    df = pd.DataFrame(data)
-    print(f"\n✅ Loaded {len(df)} total samples from {input_dir}")
-    return df
+from pathlib import Path
+from tqdm import tqdm
 
 def main():
     parser = argparse.ArgumentParser(description="Train ML classifier on PHP code.")
-    parser.add_argument("--input_dir", required=True, help="Directory containing 'safe' and 'unsafe' folders")
-    parser.add_argument("--model_out", required=True, help="Path to save the trained model")
-    parser.add_argument("--vectorizer_out", required=True, help="Path to save the TF-IDF vectorizer")
+    parser.add_argument("--input", required=True, help="CSV with preprocessed PHP code and labels")
+    parser.add_argument("--model_out", required=True, help="Path to save trained model")
+    parser.add_argument("--vectorizer_out", required=True, help="Path to save TF-IDF vectorizer")
     args = parser.parse_args()
 
-    # Load dataset
-    df = load_dataset(args.input_dir)
-    if df.empty:
-        print("❌ No data found! Check your input directory.")
+    # Load CSV
+    df = pd.read_csv(args.input)
+    print(f"✅ Loaded {len(df)} samples from {args.input}")
+
+    if 'code' not in df.columns or 'label' not in df.columns:
+        print("❌ CSV must have 'code' and 'label' columns")
         return
 
-    # Split data
+    # Split into train/validation
     X_train, X_val, y_train, y_val = train_test_split(
-        df["code"], df["label"], test_size=0.15, random_state=42, stratify=df["label"]
+        df['code'], df['label'], test_size=0.15, random_state=42, stratify=df['label']
     )
     print(f"Training samples: {len(X_train)}, Validation samples: {len(X_val)}")
 
-    # Vectorize code using TF-IDF with a progress bar
+    # Vectorize code using TF-IDF with char n-grams
     print("\n🔠 Vectorizing text (this may take a while)...")
-    vectorizer = TfidfVectorizer(
-        analyzer="char_wb",
-        ngram_range=(3, 5),
-        max_features=5000
-    )
+    vectorizer = TfidfVectorizer(analyzer='char_wb', ngram_range=(3,5), max_features=5000)
     with tqdm(total=2, desc="TF-IDF Progress", ncols=80) as pbar:
         X_train_vect = vectorizer.fit_transform(X_train)
         pbar.update(1)
@@ -94,7 +53,7 @@ def main():
     clf = LogisticRegression(max_iter=1000, class_weight="balanced")
     clf.fit(X_train_vect, y_train)
 
-    # Evaluate model
+    # Evaluate
     y_pred = clf.predict(X_val_vect)
     print("\n📊 Validation Results:")
     print(f"Accuracy: {accuracy_score(y_val, y_pred):.4f}")

@@ -5,13 +5,16 @@ preprocess.py
 Preprocess PHP files listed in a manifest CSV.
 
 Usage:
-  python preprocess.py --manifest manifests/train_manifest.csv --base_dir data/train --out preprocessed/train_processed.csv
+  python ./scripts/preprocess.py --manifest manifests/train_manifest.csv --base_dir data/train --out preprocessed/train_processed.csv
 """
 import pandas as pd
 from pathlib import Path
 import argparse
 from tqdm import tqdm
 import re
+
+_double_quote_str = re.compile(r'"(?:\\.|[^"\\])*"', re.DOTALL)
+_single_quote_str = re.compile(r"'(?:\\.|[^'\\])*'", re.DOTALL)
 
 def read_file(file_path):
     try:
@@ -22,10 +25,15 @@ def read_file(file_path):
         return ""
 
 def normalize_php_code(code):
+    
     # Remove comments
     code = re.sub(r"/\*.*?\*/", "", code, flags=re.DOTALL)
+    # Remove single-line comments
     code = re.sub(r"//.*", "", code)
     code = re.sub(r"#.*", "", code)
+    # Replace string literals with empty quotes (keep quotes so concatenation tokens remain)
+    code = _double_quote_str.sub('""', code)
+    code = _single_quote_str.sub("''", code)
     # Collapse whitespace
     code = re.sub(r"\s+", " ", code)
     return code.strip()
