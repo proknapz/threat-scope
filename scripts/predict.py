@@ -39,7 +39,7 @@ def predict_file(model, vectorizer, php_path):
     norm_code = normalize_php(code)
     X = vectorizer.transform([norm_code])
     prob = model.predict_proba(X)[0][1]
-    label = "unsafe" if prob >= 0.3 else "safe"
+    label = "unsafe" if prob >= 0.533 else "safe"
     return php_path, label, prob
 
 
