@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-train_model.py
+train_model.py (line-level)
 
-Train a Logistic Regression classifier on preprocessed PHP code CSV.
+Train a Logistic Regression classifier on line-level preprocessed PHP code.
 
-Usage (Windows):
-  python scripts/train_model.py --input preprocessed/train_processed.csv --model_out models/logreg_model.pkl --vectorizer_out models/tfidf_vectorizer.pkl
+Usage:
+  python scripts/train_model.py --input preprocessed/train_linelevel.csv --model_out models/logreg_model.pkl --vectorizer_out models/tfidf_vectorizer.pkl
 """
 
 import pandas as pd
@@ -19,8 +19,8 @@ from pathlib import Path
 from tqdm import tqdm
 
 def main():
-    parser = argparse.ArgumentParser(description="Train ML classifier on PHP code.")
-    parser.add_argument("--input", required=True, help="CSV with preprocessed PHP code and labels")
+    parser = argparse.ArgumentParser(description="Train ML classifier on PHP code lines.")
+    parser.add_argument("--input", required=True, help="CSV with preprocessed PHP lines and labels")
     parser.add_argument("--model_out", required=True, help="Path to save trained model")
     parser.add_argument("--vectorizer_out", required=True, help="Path to save TF-IDF vectorizer")
     args = parser.parse_args()
@@ -29,13 +29,13 @@ def main():
     df = pd.read_csv(args.input)
     print(f"✅ Loaded {len(df)} samples from {args.input}")
 
-    if 'code' not in df.columns or 'label' not in df.columns:
-        print("❌ CSV must have 'code' and 'label' columns")
+    if 'line' not in df.columns or 'label' not in df.columns:
+        print("❌ CSV must have 'line' and 'label' columns")
         return
 
-    # Split into train/validation
+    # Split into train/validation (stratify by label)
     X_train, X_val, y_train, y_val = train_test_split(
-        df['code'], df['label'], test_size=0.15, random_state=42, stratify=df['label']
+        df['line'], df['label'], test_size=0.15, random_state=42, stratify=df['label']
     )
     print(f"Training samples: {len(X_train)}, Validation samples: {len(X_val)}")
 

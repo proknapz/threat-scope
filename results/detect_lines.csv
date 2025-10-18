@@ -1,0 +1,17 @@
+line_no,prob,line,unsafe
+45,0.6169577489176298,$array = array();,True
+46,0.6360098888706405,$array[] = 'safe' ;,True
+47,0.6152366046197686,$array[] = $_GET['userData'] ;,True
+48,0.22718764789228596,$array[] = 'safe' ;,False
+49,0.09760126041074357,$tainted = $array[1] ;,False
+51,1.1828552346035622e-06,$tainted = (float) $tainted ;,False
+53,0.06955104658125229,"$query = ""SELECT Trim(a.FirstName) & ' ' & Trim(a.LastName) AS employee_name, a.city, a.street & (' ' +a.housenum) AS address FROM Employees AS a  WHERE a.supervisor='"". $tainted . ""'"";",False
+55,0.9399910467475474,"$conn = mysql_connect('localhost', 'mysql_user', 'mysql_password'); // Connection to the database (address, user, password)",True
+56,0.9582556050367061,mysql_select_db('dbname') ;,True
+57,0.9465865046114282,"echo ""query : "". $query .""<br /><br />"" ;",True
+59,0.9294447146889657,$res = mysql_query($query); //execution,True
+61,0.9323044533152383,while($data =mysql_fetch_array($res)){,True
+62,0.9375278085182649,print_r($data) ;,True
+63,0.6323392486345655,"echo ""<br />"" ;",True
+64,0.9650923052741622,} ,True
+65,0.9643446553678855,mysql_close($conn);,True

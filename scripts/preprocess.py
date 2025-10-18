@@ -2,10 +2,10 @@
 """
 preprocess.py
 
-Preprocess PHP files listed in a manifest CSV.
+Line-level preprocessing for PHP files for ML line detection.
+python scripts\preprocess.py --manifest manifests\train_manifest.csv --base_dir data\train --out preprocessed\train_linelevel.csv
 
-Usage:
-  python ./scripts/preprocess.py --manifest manifests/train_manifest.csv --base_dir data/train --out preprocessed/train_processed.csv
+
 """
 import pandas as pd
 from pathlib import Path
@@ -24,57 +24,66 @@ def read_file(file_path):
         print(f"Failed to read {file_path}: {e}")
         return ""
 
-def normalize_php_code(code):
-    
-    # Remove comments
-    code = re.sub(r"/\*.*?\*/", "", code, flags=re.DOTALL)
+def normalize_php_line(line):
+    # Remove block comments (simplified, assumes single line or normalized block)
+    line = re.sub(r"/\*.*?\*/", "", line)
     # Remove single-line comments
-    code = re.sub(r"//.*", "", code)
-    code = re.sub(r"#.*", "", code)
-    # Replace string literals with empty quotes (keep quotes so concatenation tokens remain)
-    code = _double_quote_str.sub('""', code)
-    code = _single_quote_str.sub("''", code)
+    line = re.sub(r"//.*", "", line)
+    line = re.sub(r"#.*", "", line)
+    # Replace string literals with empty quotes
+    line = _double_quote_str.sub('""', line)
+    line = _single_quote_str.sub("''", line)
     # Collapse whitespace
-    code = re.sub(r"\s+", " ", code)
-    return code.strip()
+    line = re.sub(r"\s+", " ", line)
+    return line.strip()
 
-def preprocess_manifest(manifest_csv, base_dir, out_csv):
+def preprocess_manifest_line_level(manifest_csv, base_dir, out_csv):
     df = pd.read_csv(manifest_csv)
     base_dir = Path(base_dir)
-    codes, labels, splits, projects = [], [], [], []
+
+    lines_list, labels_list, splits_list, projects_list, files_list, linenos_list = [], [], [], [], [], []
 
     for _, row in tqdm(df.iterrows(), total=len(df), desc="Preprocessing"):
         file_path = base_dir / row['filename']
         if not file_path.exists():
             print(f"Warning: file does not exist: {file_path}")
-            code = ""
-        else:
-            code = read_file(file_path)
-            code = normalize_php_code(code)
-        codes.append(code)
-        labels.append(row['label'])
-        splits.append(row['split'])
-        projects.append(row['project'])
+            continue
+        content = read_file(file_path)
+        lines = content.splitlines()
+        for lineno, line in enumerate(lines, start=1):
+            norm_line = normalize_php_line(line)
+            if norm_line == "":
+                continue  # skip empty lines
+            lines_list.append(norm_line)
+            labels_list.append(row['label'])
+            splits_list.append(row['split'])
+            projects_list.append(row['project'])
+            files_list.append(str(file_path))
+            linenos_list.append(lineno)
 
     df_out = pd.DataFrame({
-        "code": codes,
-        "label": labels,
-        "split": splits,
-        "project": projects
+        "file": files_list,
+        "lineno": linenos_list,
+        "line": lines_list,
+        "label": labels_list,
+        "split": splits_list,
+        "project": projects_list
     })
+
     out_csv = Path(out_csv)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     df_out.to_csv(out_csv, index=False)
-    print(f"Preprocessed CSV saved to {out_csv}")
+    print(f"Line-level preprocessed CSV saved to {out_csv}")
     print(df_out.head())
 
 def main():
-    parser = argparse.ArgumentParser(description="Preprocess PHP files from manifest CSV")
+    parser = argparse.ArgumentParser(description="Line-level preprocess PHP files from manifest CSV")
     parser.add_argument("--manifest", required=True, help="Input manifest CSV")
     parser.add_argument("--base_dir", required=True, help="Base directory of PHP files")
     parser.add_argument("--out", required=True, help="Output CSV path")
     args = parser.parse_args()
-    preprocess_manifest(args.manifest, args.base_dir, args.out)
+
+    preprocess_manifest_line_level(args.manifest, args.base_dir, args.out)
 
 if __name__ == "__main__":
     main()
