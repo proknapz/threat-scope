@@ -25,6 +25,9 @@ def allowed_file(filename):
 
 @app.route("/", methods=["GET", "POST"])
 def index():
+    results = None
+    filename = None
+
     if request.method == "POST":
         file = request.files.get("file")
         if file and allowed_file(file.filename):
@@ -33,20 +36,22 @@ def index():
             file.save(filepath)
             
             # Run detection
-            results = predict_file(model, vectorizer, filepath, threshold=0.7)
+            raw_results = predict_file(model, vectorizer, filepath, threshold=0.7)
             
-            # Prepare results for rendering
-            highlighted = []
-            for idx, line, label, prob, reports in results:
-                highlighted.append({
+            # Prepare results for template
+            results = []
+            for idx, line, label, prob, reports in raw_results:
+                results.append({
                     "line_num": idx,
                     "line": line.rstrip(),
                     "label": label,
                     "prob": f"{prob:.3f}",
                     "reports": reports
                 })
-            return render_template("results.html", results=highlighted, filename=filename)
-    return render_template("index.html")
+
+    # Always render index.html, pass results if available
+    return render_template("index.html", results=results, filename=filename)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

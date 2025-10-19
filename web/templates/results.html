@@ -3,14 +3,18 @@
 <head>
   <meta charset="utf-8">
   <title>Scan Results</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    .unsafe { background-color: #ffcccc; }
-    .safe { background-color: #ccffcc; }
-    pre { margin: 0; padding: 2px; }
+    body { background-color: #000; color: white; font-family: monospace; padding: 1rem; }
+    .safe { background-color: rgba(136,146,190,0.1); color: #8892BE; display: block; margin-bottom: 2px; padding: 2px 4px; border-radius: 4px; }
+    .unsafe { background-color: rgba(119,123,179,0.15); color: #777BB3; display: block; margin-bottom: 2px; padding: 2px 4px; border-radius: 4px; }
+    a { color: #8892BE; text-decoration: underline; margin-top: 1rem; display: inline-block; }
+    a:hover { color: #777BB3; }
+    pre { margin: 0; white-space: pre-wrap; }
   </style>
 </head>
 <body>
-  <h1>Scan Results for {{ filename }}</h1>
+  <h1 class="text-2xl font-bold text-[#8892BE] mb-4">Scan Results for {{ filename }}</h1>
   <a href="{{ url_for('index') }}">Upload another file</a>
   <pre>
 {% for r in results %}

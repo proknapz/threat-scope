@@ -1,14 +1,97 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>PHP Vulnerability Scanner</title>
+<meta charset="utf-8">
+<title>PHP Vulnerability Scanner</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { background-color: #000; color: white; font-family: monospace; margin:0; padding:0; }
+
+/* Upload box */
+@keyframes pulse-glow {
+  0%,100% { box-shadow:0 0 8px 2px rgba(119,123,179,0.14); }
+  50% { box-shadow:0 0 12px 3px rgba(136,146,190,0.18); }
+}
+.hover-pulse:hover { animation:pulse-glow 4s infinite; }
+
+.btn { background-color: #8892BE; color: black; padding:0.5rem 1rem; border-radius:0.25rem; cursor:pointer; transition: all 0.2s; }
+.btn:hover { background-color:#777BB3; transform: translateY(-1px); }
+input[type="file"] { display:none; }
+
+/* Results container */
+#resultsContent {
+  max-height: 500px;
+  overflow-y: auto;
+  background-color: #0f0f10;
+  padding:0.5rem 1rem;
+  border-radius:0.5rem;
+  font-family: monospace;
+  white-space: pre;
+  word-break: normal;
+  margin-top:1rem;
+  font-size:0.85rem;
+  line-height:1rem;
+}
+
+/* Inline line number and code */
+.line-number { color:#666; width:3ch; display:inline-block; text-align:right; user-select:none; }
+.code { display:inline; }
+.safe { color:#8892BE; }
+.unsafe { color:#b37795; }
+.unsafe:hover { background-color: rgba(136,146,190,0.15); cursor:pointer; }
+
+
+/* Reports hidden until click */
+.reports { font-size:0.75rem; color:#aaa; display:none; margin-left:4ch; line-height:1rem; }
+.report { padding:0; }
+.cursor-pointer { cursor:pointer; }
+</style>
 </head>
-<body>
-  <h1>Upload a PHP file to scan for vulnerabilities</h1>
-  <form method="post" enctype="multipart/form-data">
+<body class="flex flex-col items-center justify-start min-h-screen p-6">
+
+<h1 class="text-3xl font-bold mb-4 text-[#8892BE] text-center">PHP Vulnerability Scanner</h1>
+
+<form id="uploadForm" method="post" enctype="multipart/form-data" class="w-full max-w-2xl">
+  <label class="relative w-full h-64 border-4 border-dashed border-[#777BB3] rounded-xl flex items-center justify-center cursor-pointer hover:border-[#8892BE] hover:bg-[#0f0f10] hover-pulse">
     <input type="file" name="file" accept=".php" required>
-    <button type="submit">Scan</button>
-  </form>
+    <div class="flex flex-col items-center justify-center pointer-events-none">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-[#777BB3] mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12v8m0 0l-4-4m4 4l4-4M12 4v8"/>
+      </svg>
+      <div class="text-center pointer-events-none">
+        <div class="text-[#8892BE] text-lg mb-3">Drag a PHP file here</div>
+        <div class="pointer-events-auto">
+          <button type="button" onclick="this.closest('label').querySelector('input').click()" class="btn">Browse</button>
+        </div>
+      </div>
+    </div>
+  </label>
+  <div class="mt-4">
+    <button type="submit" class="w-full btn">Scan</button>
+  </div>
+</form>
+
+{% if results %}
+<h2 class="text-2xl font-bold mt-6 mb-2 text-[#8892BE]">Scan Results for {{ filename }}</h2>
+<div id="resultsContent">
+<pre>{% for r in results %}<span class="cursor-pointer {{ r.label }}" onclick="toggleDetails(this)"><span class="line-number">{{ r.line_num }}</span> <span class="code {{ r.label }}">{{ r.line }}</span></span>
+{% if r.reports %}<span class="reports">{% for rep in r.reports %}• {{ rep[0] }} tainted={{ rep[1] }} ({{ rep[2] }}){% endfor %}</span>{% endif %}{% endfor %}</pre>
+</div>
+<a href="{{ url_for('index') }}" class="mt-2 inline-block btn">Upload another file</a>
+{% endif %}
+
+<footer class="mt-8 text-center text-gray-400 text-sm">
+PHP Vulnerability Scanner &copy; 2025
+</footer>
+
+<script>
+function toggleDetails(lineSpan) {
+  const reportsSpan = lineSpan.nextElementSibling;
+  if (reportsSpan && reportsSpan.classList.contains('reports')) {
+    reportsSpan.style.display = reportsSpan.style.display === 'inline' ? 'none' : 'inline';
+  }
+}
+</script>
+
 </body>
 </html>
