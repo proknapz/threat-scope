@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scan Results</title>
+  <style>
+    .unsafe { background-color: #ffcccc; }
+    .safe { background-color: #ccffcc; }
+    pre { margin: 0; padding: 2px; }
+  </style>
+</head>
+<body>
+  <h1>Scan Results for {{ filename }}</h1>
+  <a href="{{ url_for('index') }}">Upload another file</a>
+  <pre>
+{% for r in results %}
+<span class="{{ r.label }}">
+[{{ r.line_num }}] prob={{ r.prob }} → {{ r.line }}
+{% for rep in r.reports %}
+    • {{ rep[0] }} tainted={{ rep[1] }} ({{ rep[2] }})
+{% endfor %}
+</span>
+{% endfor %}
+  </pre>
+</body>
+</html>

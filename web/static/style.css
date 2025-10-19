@@ -1,0 +1,17 @@
+body {
+    font-family: monospace;
+    padding: 20px;
+    background: #f5f5f5;
+}
+
+.unsafe {
+    background-color: #ffcccc;
+    display: block;
+    padding: 2px 4px;
+}
+
+.safe {
+    background-color: #ccffcc;
+    display: block;
+    padding: 2px 4px;
+}
