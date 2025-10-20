@@ -69,6 +69,7 @@ input[type="file"] { display:none; }
   <div class="mt-4">
     <button type="submit" class="w-full btn">Scan</button>
   </div>
+  <div id="selectedFileName" class="mt-2 text-[#8892BE] text-center"></div>
 </form>
 
 {% if results %}
@@ -85,6 +86,16 @@ PHP Vulnerability Scanner &copy; 2025
 </footer>
 
 <script>
+const fileInput = document.querySelector('input[type="file"]');
+const fileNameDiv = document.getElementById('selectedFileName');
+
+fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) {
+        fileNameDiv.textContent = "Selected file: " + fileInput.files[0].name;
+    } else {
+        fileNameDiv.textContent = "";
+    }
+});
 function toggleDetails(lineSpan) {
   const reportsSpan = lineSpan.nextElementSibling;
   if (reportsSpan && reportsSpan.classList.contains('reports')) {
