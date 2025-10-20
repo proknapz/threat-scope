@@ -45,11 +45,34 @@ input[type="file"] { display:none; }
 .reports { font-size:0.75rem; color:#aaa; display:none; margin-left:4ch; line-height:1rem; }
 .report { padding:0; }
 .cursor-pointer { cursor:pointer; }
+
+.tab-btn.active {
+  background-color: rgba(136,146,190,0.15);
+  border-radius: 0.25rem;
+}
+
 </style>
 </head>
 <body class="flex flex-col items-center justify-start min-h-screen p-6">
 
 <h1 class="text-3xl font-bold mb-4 text-[#8892BE] text-center">PHP Vulnerability Scanner</h1>
+<!-- NAVIGATION PANEL -->
+<div class="w-full max-w-2xl mb-4">
+  <div class="flex border-b border-gray-700">
+    <button class="tab-btn font-bold text-[#8892BE] px-4 py-2" data-tab="uploadTab">Upload</button>
+    <button class="tab-btn text-gray-400 px-4 py-2" data-tab="historyTab">Past Scans</button>
+
+  </div>
+
+ 
+  <div id="uploadTab" class="tab-content">
+     
+  </div>
+  <div id="historyTab" class="tab-content hidden">
+     
+    <p class="text-gray-400 mt-2">No past scans yet.</p>
+  </div>
+</div>
 
 <form id="uploadForm" method="post" enctype="multipart/form-data" class="w-full max-w-2xl">
   <label class="relative w-full h-64 border-4 border-dashed border-[#777BB3] rounded-xl flex items-center justify-center cursor-pointer hover:border-[#8892BE] hover:bg-[#0f0f10] hover-pulse">
@@ -102,6 +125,32 @@ function toggleDetails(lineSpan) {
     reportsSpan.style.display = reportsSpan.style.display === 'inline' ? 'none' : 'inline';
   }
 }
+
+const tabs = document.querySelectorAll('.tab-btn');
+const contents = document.querySelectorAll('.tab-content');
+
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    // Remove active styles from all tabs
+    tabs.forEach(t => t.classList.remove('active', 'font-bold', 'text-[#8892BE]'));
+    tabs.forEach(t => t.classList.add('text-gray-400'));
+
+    // Hide all tab contents
+    contents.forEach(c => c.classList.add('hidden'));
+
+    // Show selected tab content
+    const target = document.getElementById(tab.dataset.tab);
+    target.classList.remove('hidden');
+
+    // Highlight active tab
+    tab.classList.add('active', 'font-bold', 'text-[#8892BE]');
+    tab.classList.remove('text-gray-400');
+  });
+});
+
+
+tabs.forEach(tab => tab.classList.remove('active'));
+tab.classList.add('active');
 </script>
 
 </body>
