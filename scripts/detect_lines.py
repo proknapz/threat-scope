@@ -6,8 +6,8 @@ Detect potentially unsafe lines in PHP files using a trained ML model
 and taint analysis.
 
 Usage:
-python scripts/detect_lines.py --file data/train/safe/CWE_89__array-GET__CAST-cast_float__multiple_AS-concatenation_simple_quote.php --model models/logreg_model.pkl --vectorizer models/tfidf_vectorizer.pkl --threshold 0.533
-python scripts/detect_lines.py --file data/train/unsafe/CWE_89__proc_open__func_FILTER-CLEANING-full_special_chars_filter__select_from-concatenation_simple_quote.php --model models/logreg_model.pkl --vectorizer models/tfidf_vectorizer.pkl --threshold 0.533
+python scripts/detect_lines.py --file data/train/safe/CWE_89__array-GET__CAST-cast_float__multiple_AS-concatenation_simple_quote.php --model models/logreg_model.pkl --vectorizer models/tfidf_vectorizer.pkl --threshold 0.7
+python scripts/detect_lines.py --file data/train/unsafe/CWE_89__array-GET__func_FILTER-CLEANING-email_filter__join-concatenation_simple_quote.php --model models/logreg_model.pkl --vectorizer models/tfidf_vectorizer.pkl --threshold 0.7
 """
 
 import argparse

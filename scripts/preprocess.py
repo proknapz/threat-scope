@@ -3,7 +3,9 @@
 preprocess.py
 
 Line-level preprocessing for PHP files for ML line detection.
-python scripts\preprocess.py --manifest manifests\train_manifest.csv --base_dir data\train --out preprocessed\train_linelevel.csv
+python scripts\preprocess.py --manifest manifests/train_manifest.csv --base_dir data/train --out preprocessed/train_linelevel.csv
+
+
 
 
 """

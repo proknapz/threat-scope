@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import precision_score, recall_score, f1_score
 from sklearn.model_selection import train_test_split
 import pandas as pd
-
+"""
+python.\scripts\eval_thresholds.py
+"""
 # --- Load model and vectorizer ---
 with open("models/logreg_model.pkl", "rb") as f:
     model = pickle.load(f)
@@ -30,9 +32,11 @@ best_metrics = {"precision": 0, "recall": 0, "f1": 0}
 
 for t in thresholds:
     preds = (probs >= t).astype(int)
-    precision = precision_score(y_val, preds)
+    # If there are no positive predictions, precision is undefined; set zero_division=0
+    # to avoid UndefinedMetricWarning and return a sensible 0.0 precision/f1.
+    precision = precision_score(y_val, preds, zero_division=0)
     recall = recall_score(y_val, preds)
-    f1 = f1_score(y_val, preds)
+    f1 = f1_score(y_val, preds, zero_division=0)
 
     precision_list.append(precision)
     recall_list.append(recall)

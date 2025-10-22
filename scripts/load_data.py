@@ -6,7 +6,7 @@ Scan a directory containing `safe/` and `unsafe/` subfolders (including nested f
 and produce a CSV manifest with relative paths.
 
 Usage:
-  python scripts/load_data.py --input_dir data/train --out preprocessed/train_processed.csv
+  python scripts/load_data.py --input_dir data/train --out manifests/train_manifest.csv
 """
 from pathlib import Path
 import pandas as pd
@@ -19,31 +19,36 @@ def gather_files(input_dir):
         raise FileNotFoundError(f"Input directory does not exist: {input_dir}")
 
     rows = []
-    for subfolder in input_dir.rglob("*"):
-        if subfolder.is_file() and subfolder.suffix.lower() == ".php":
-            # Determine label
-            parts = subfolder.parts
-            if "safe" in parts:
-                label = 0
-                label_name = "safe"
-            elif "unsafe" in parts:
-                label = 1
-                label_name = "unsafe"
-            else:
-                label = -1
-                label_name = "unknown"
-            # store relative path to input_dir
-            rel_path = subfolder.relative_to(input_dir)
-            project = parts[-2] if len(parts) > 1 else "unknown"
-            rows.append({
-                "filename": str(rel_path),
-                "label": label,
-                "label_name": label_name,
-                "project": project,
-                "split": "none"
-            })
-    df = pd.DataFrame(rows)
-    return df
+    for php_file in tqdm(list(input_dir.rglob("*.php")), desc="Scanning PHP files"):
+        parts = php_file.parts
+
+        # ✅ Determine label and label_name
+        if "safe" in parts:
+            label = 0
+            label_name = "safe"
+            project = "safe"
+        elif "unsafe" in parts:
+            label = 1
+            label_name = "unsafe"
+            project = "unsafe"
+        else:
+            label = -1
+            label_name = "unknown"
+            project = "unknown"
+
+        # ✅ Store relative path to input_dir (use Windows-style backslashes)
+        rel_path = php_file.relative_to(input_dir)
+        rel_path_str = str(rel_path).replace("/", "\\")
+
+        rows.append({
+            "filename": rel_path_str,
+            "label": label,
+            "label_name": label_name,
+            "project": project,
+            "split": "none"
+        })
+
+    return pd.DataFrame(rows)
 
 def main():
     parser = argparse.ArgumentParser(description="Create manifest CSV of PHP files")
@@ -57,7 +62,7 @@ def main():
         return
 
     df.to_csv(args.out, index=False)
-    print(f"Manifest CSV saved to {args.out}")
+    print(f"✅ Manifest CSV saved to {args.out}")
     print(df.head())
 
 if __name__ == "__main__":
