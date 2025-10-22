@@ -122,13 +122,25 @@ def predict_file(model, vectorizer, php_path, threshold=0.5):
     for idx, (line, prob) in enumerate(zip(lines, probs), start=1):
         reports = taint_reports.get(idx, [])
         tainted_in_sql = any(r[1] and "SQL" in r[2].upper() for r in reports)
-        # Combine ML + taint logic
+
+        # New: detect pure constant assignments or resource assignments
+        is_constant_assignment = re.match(
+            r'\s*\$[A-Za-z_]\w*\s*=\s*(["\'].*["\']|\d+(\.\d+)?|true|false|null|\[.*\])\s*;', 
+            line, re.IGNORECASE
+        )
+        is_resource_assignment = 'proc_open' in line or 'fopen' in line
+
         if tainted_in_sql:
             label = "unsafe"
+        elif is_constant_assignment or is_resource_assignment:
+            # Override ML if it's a safe assignment
+            label = "safe"
         else:
             label = "unsafe" if prob >= threshold else "safe"
+
         results.append((idx, line, label, prob, reports))
     return results
+
 
 
 def _is_comment_only(line, in_block):
