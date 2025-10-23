@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Database Management - PHP Vulnerability Scanner</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body { background-color: #000; color: white; font-family: monospace; margin:0; padding:0; }
+
+.btn { 
+    background-color: #8892BE; 
+    color: black; 
+    padding:0.5rem 1rem; 
+    border-radius:0.25rem; 
+    cursor:pointer; 
+    transition: all 0.2s; 
+    text-decoration: none;
+    display: inline-block;
+}
+.btn:hover { background-color:#777BB3; transform: translateY(-1px); }
+.btn-danger { background-color: #b37795; }
+.btn-danger:hover { background-color: #a06684; }
+
+.stat-card {
+    background-color: #0f0f10;
+    border: 1px solid #333;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 0.5rem;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #0f0f10;
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.table th, .table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #333;
+}
+
+.table th {
+    background-color: #1a1a1a;
+    color: #8892BE;
+    font-weight: bold;
+}
+
+.table tr:hover {
+    background-color: #1a1a1a;
+}
+
+.chart-container {
+    background-color: #0f0f10;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+</style>
+</head>
+<body class="min-h-screen p-6">
+
+<div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-[#8892BE]">Database Management</h1>
+        <div class="space-x-2">
+            <a href="/" class="btn">Back to Scanner</a>
+            <a href="/api/export/csv" class="btn">Export CSV</a>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div class="stat-card">
+            <h3 class="text-lg font-bold text-[#8892BE] mb-2">Total Scans</h3>
+            <p class="text-3xl font-bold">{{ total_scans }}</p>
+        </div>
+        <div class="stat-card">
+            <h3 class="text-lg font-bold text-[#8892BE] mb-2">Unique Files</h3>
+            <p class="text-3xl font-bold">{{ total_files }}</p>
+        </div>
+        <div class="stat-card">
+            <h3 class="text-lg font-bold text-[#8892BE] mb-2">Unsafe Lines</h3>
+            <p class="text-3xl font-bold text-red-400">{{ total_unsafe_lines }}</p>
+        </div>
+        <div class="stat-card">
+            <h3 class="text-lg font-bold text-[#8892BE] mb-2">Safe Lines</h3>
+            <p class="text-3xl font-bold text-green-400">{{ total_safe_lines }}</p>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <!-- Vulnerability Rate Chart -->
+        <div class="chart-container">
+            <h3 class="text-xl font-bold text-[#8892BE] mb-4">Vulnerability Rate Over Time</h3>
+            <canvas id="vulnerabilityChart" width="400" height="200"></canvas>
+        </div>
+        
+        <!-- File Statistics Chart -->
+        <div class="chart-container">
+            <h3 class="text-xl font-bold text-[#8892BE] mb-4">Most Scanned Files</h3>
+            <canvas id="fileChart" width="400" height="200"></canvas>
+        </div>
+    </div>
+
+    <!-- Recent Scans Table -->
+    <div class="mb-8">
+        <h2 class="text-2xl font-bold text-[#8892BE] mb-4">Recent Scans</h2>
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Filename</th>
+                        <th>Timestamp</th>
+                        <th>Total Lines</th>
+                        <th>Unsafe Lines</th>
+                        <th>Vulnerability Rate</th>
+                        <th>File Size</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for scan in recent_scans %}
+                    <tr>
+                        <td>{{ scan.id }}</td>
+                        <td>{{ scan.filename }}</td>
+                        <td>{{ scan.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ scan.total_lines }}</td>
+                        <td class="text-red-400">{{ scan.unsafe_lines }}</td>
+                        <td>
+                            {% set rate = (scan.unsafe_lines / scan.total_lines * 100) if scan.total_lines > 0 else 0 %}
+                            <span class="{% if rate > 50 %}text-red-400{% elif rate > 20 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                                {{ "%.1f"|format(rate) }}%
+                            </span>
+                        </td>
+                        <td>{{ "%.1f"|format(scan.file_size / 1024) }} KB</td>
+                        <td>
+                            <a href="/scan/{{ scan.id }}" class="btn text-sm">View</a>
+                            <button onclick="deleteScan({{ scan.id }})" class="btn btn-danger text-sm">Delete</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- File Statistics Table -->
+    <div class="mb-8">
+        <h2 class="text-2xl font-bold text-[#8892BE] mb-4">File Statistics</h2>
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Scan Count</th>
+                        <th>Avg Unsafe Lines</th>
+                        <th>Last Scanned</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stat in file_stats %}
+                    <tr>
+                        <td>{{ stat.filename }}</td>
+                        <td>{{ stat.scan_count }}</td>
+                        <td class="text-red-400">{{ "%.1f"|format(stat.avg_unsafe) }}</td>
+                        <td>{{ stat.last_scanned.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load vulnerability trend data
+fetch('/api/stats')
+    .then(response => response.json())
+    .then(data => {
+        // Vulnerability Rate Chart
+        const ctx1 = document.getElementById('vulnerabilityChart').getContext('2d');
+        const vulnerabilityData = data.vulnerability_trend.map(item => ({
+            x: new Date(item.date),
+            y: item.rate
+        }));
+        
+        new Chart(ctx1, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'Vulnerability Rate (%)',
+                    data: vulnerabilityData,
+                    borderColor: '#8892BE',
+                    backgroundColor: 'rgba(136, 146, 190, 0.1)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day'
+                        },
+                        ticks: {
+                            color: '#fff'
+                        },
+                        grid: {
+                            color: '#333'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#fff'
+                        },
+                        grid: {
+                            color: '#333'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#fff'
+                        }
+                    }
+                }
+            }
+        });
+
+        // File Statistics Chart
+        const ctx2 = document.getElementById('fileChart').getContext('2d');
+        const fileData = {{ file_stats|tojson }};
+        const topFiles = fileData.slice(0, 5);
+        
+        new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: topFiles.map(f => f.filename.substring(0, 20) + '...'),
+                datasets: [{
+                    label: 'Scan Count',
+                    data: topFiles.map(f => f.scan_count),
+                    backgroundColor: '#8892BE',
+                    borderColor: '#777BB3',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        ticks: {
+                            color: '#fff'
+                        },
+                        grid: {
+                            color: '#333'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#fff'
+                        },
+                        grid: {
+                            color: '#333'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#fff'
+                        }
+                    }
+                }
+            }
+        });
+    });
+
+// Delete scan function
+function deleteScan(scanId) {
+    if (confirm('Are you sure you want to delete this scan?')) {
+        fetch(`/api/scan/${scanId}/delete`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            location.reload();
+        })
+        .catch(error => {
+            alert('Error deleting scan: ' + error);
+        });
+    }
+}
+</script>
+
+</body>
+</html>

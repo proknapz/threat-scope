@@ -1,6 +1,31 @@
 version: '3.8'
 
 services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: threat_scope
+      MYSQL_USER: threat_user
+      MYSQL_PASSWORD: threat_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: rootpassword
+    ports:
+      - "8080:80"
+    depends_on:
+      - mysql
+
   web:
     build:
       context: ./web
@@ -11,11 +36,9 @@ services:
       - ./models:/app/models
     environment:
       - FLASK_ENV=development
+      - DATABASE_URL=mysql+pymysql://threat_user:threat_password@mysql:3306/threat_scope
+    depends_on:
+      - mysql
 
-  sqlite-web:
-    image: coleifer/sqlite-web
-    command: /app/scans.db --host 0.0.0.0 --port 8080
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./web:/app
+volumes:
+  mysql_data:

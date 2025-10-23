@@ -61,7 +61,7 @@ input[type="file"] { display:none; }
   <div class="flex border-b border-gray-700">
     <button class="tab-btn font-bold text-[#8892BE] px-4 py-2" data-tab="uploadTab">Upload</button>
     <button class="tab-btn text-gray-400 px-4 py-2" data-tab="historyTab">Past Scans</button>
-
+    <a href="/database" class="tab-btn text-gray-400 px-4 py-2 hover:text-[#8892BE]">Database</a>
   </div>
 
  
@@ -70,15 +70,34 @@ input[type="file"] { display:none; }
   </div>
     <div id="historyTab" class="tab-content hidden">
       {% if past_scans %}
-        <ul class="list-disc pl-5 text-[#8892BE]">
+        <div class="space-y-2">
           {% for scan in past_scans %}
-            <li>
-              <a href="{{ url_for('view_scan', scan_id=scan.id) }}" class="hover:underline">
-                {{ scan.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} - {{ scan.filename }}
-              </a>
-            </li>
+            <div class="bg-[#0f0f10] p-3 rounded border border-gray-700 hover:border-[#8892BE] transition-colors">
+              <div class="flex justify-between items-start">
+                <div class="flex-1">
+                  <a href="{{ url_for('view_scan', scan_id=scan.id) }}" class="text-[#8892BE] hover:underline font-medium">
+                    {{ scan.filename }}
+                  </a>
+                  <div class="text-sm text-gray-400 mt-1">
+                    {{ scan.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+                  </div>
+                  <div class="text-xs text-gray-500 mt-1">
+                    {% if scan.total_lines > 0 %}
+                      {% set rate = (scan.unsafe_lines / scan.total_lines * 100) %}
+                      {{ scan.total_lines }} lines | {{ scan.unsafe_lines }} unsafe | 
+                      <span class="{% if rate > 50 %}text-red-400{% elif rate > 20 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                        {{ "%.1f"|format(rate) }}% vulnerability rate
+                      </span>
+                    {% endif %}
+                  </div>
+                </div>
+                <div class="text-xs text-gray-500">
+                  {{ "%.1f"|format(scan.file_size / 1024) }} KB
+                </div>
+              </div>
+            </div>
           {% endfor %}
-        </ul>
+        </div>
       {% else %}
         <p class="text-gray-400 mt-2">No past scans yet.</p>
       {% endif %}
