@@ -51,8 +51,38 @@ class Scan(db.Model):
             'vulnerability_rate': round((self.unsafe_lines / self.total_lines * 100), 2) if self.total_lines > 0 else 0
         }
 
-with app.app_context():
-    db.create_all()
+# Wait for database to be ready
+import time
+import sys
+
+def wait_for_db():
+    """Wait for database to be ready with retries"""
+    max_retries = 30
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            with app.app_context():
+                db.create_all()
+            print("✅ Database connection successful")
+            return True
+        except Exception as e:
+            retry_count += 1
+            print(f"⏳ Waiting for database... (attempt {retry_count}/{max_retries})")
+            time.sleep(2)
+    
+    print("❌ Failed to connect to database after 30 attempts")
+    return False
+
+# Only try to create tables if we can connect
+if wait_for_db():
+    print("🚀 Database ready, starting application...")
+else:
+    print("⚠️ Database not ready, but continuing with SQLite fallback...")
+    # Fallback to SQLite if MySQL fails
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///scans.db'
+    with app.app_context():
+        db.create_all()
 # Load model & vectorizer
 with open("models/logreg_model.pkl", "rb") as f:
     model = pickle.load(f)

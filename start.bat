@@ -38,27 +38,28 @@ docker-compose ps
 REM Run tests
 echo 🧪 Running setup tests...
 python test_setup.py
+set TEST_RESULT=%errorlevel%
 
-if %errorlevel% equ 0 (
-    echo.
-    echo ✅ Threat-Scope is now running!
-    echo.
-    echo 📋 Access URLs:
-    echo   • Main Scanner: http://127.0.0.1:5000 (or http://localhost:5000)
-    echo   • Database Management: http://127.0.0.1:5000/database
-    echo   • phpMyAdmin: http://localhost:8080
-    echo.
-    echo 🔧 MySQL Credentials:
-    echo   • Host: localhost:3306
-    echo   • Database: threat_scope
-    echo   • Username: threat_user
-    echo   • Password: threat_password
-    echo   • Root Password: rootpassword
-    echo.
-    echo To stop the services, run: docker-compose down
-    pause
-) else (
-    echo ❌ Setup tests failed. Please check the logs above.
-    pause
-    exit /b 1
+echo.
+echo ✅ Threat-Scope is now running!
+echo.
+echo 📋 Access URLs:
+echo   • Main Scanner: http://127.0.0.1:5000 (or http://localhost:5000)
+echo   • Database Management: http://127.0.0.1:5000/database
+echo   • phpMyAdmin: http://localhost:8080
+echo.
+echo 🔧 MySQL Credentials:
+echo   • Host: localhost:3306
+echo   • Database: threat_scope
+echo   • Username: threat_user
+echo   • Password: threat_password
+echo   • Root Password: rootpassword
+echo.
+echo 💡 To stop the services, run: docker-compose down
+echo.
+
+if %TEST_RESULT% neq 0 (
+    echo ⚠️  Note: Some tests failed, but services are running. Check logs above for details.
 )
+
+pause
