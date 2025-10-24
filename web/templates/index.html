@@ -26,24 +26,60 @@ input[type="file"] { display:none; }
   padding:0.5rem 1rem;
   border-radius:0.5rem;
   font-family: monospace;
-  white-space: pre;
-  word-break: normal;
   margin-top:1rem;
   font-size:0.85rem;
-  line-height:1rem;
 }
 
-/* Inline line number and code */
-.line-number { color:#666; width:3ch; display:inline-block; text-align:right; user-select:none; }
-.code { display:inline; }
+/* Code line container */
+.code-line {
+  display: block;
+  padding: 0.15rem 0;
+  line-height: 1.4rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.code-line:hover {
+  background-color: rgba(136,146,190,0.05);
+}
+
+/* Line number and code */
+.line-number { 
+  color:#666; 
+  width:4ch; 
+  display:inline-block; 
+  text-align:right; 
+  user-select:none;
+  margin-right: 0.5rem;
+  font-weight: bold;
+}
+.code { 
+  display:inline; 
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .safe { color:#8892BE; }
-.unsafe { color:#b37795; }
-.unsafe:hover { background-color: rgba(136,146,190,0.15); cursor:pointer; }
+.unsafe { color:#b37795; cursor:pointer; }
+.unsafe:hover { background-color: rgba(179, 119, 149, 0.2); }
 
-
-/* Reports hidden until click */
-.reports { font-size:0.75rem; color:#aaa; display:none; margin-left:4ch; line-height:1rem; }
-.report { padding:0; }
+/* Reports - display on new line */
+.reports { 
+  font-size:0.75rem; 
+  color:#f4c542; 
+  display:none; 
+  margin-left:5ch;
+  padding: 0.3rem 0;
+  line-height:1.3rem;
+  background-color: rgba(244, 197, 66, 0.05);
+  border-left: 2px solid rgba(244, 197, 66, 0.3);
+  padding-left: 0.5rem;
+  margin-top: 0.2rem;
+  margin-bottom: 0.2rem;
+}
+.report { 
+  display: block;
+  padding: 0.1rem 0;
+}
 .cursor-pointer { cursor:pointer; }
 
 .tab-btn.active {
@@ -128,8 +164,21 @@ input[type="file"] { display:none; }
 {% if results %}
 <h2 class="text-2xl font-bold mt-6 mb-2 text-[#8892BE]">Scan Results for {{ filename }}</h2>
 <div id="resultsContent">
-<pre>{% for r in results %}<span class="cursor-pointer {{ r.label }}" onclick="toggleDetails(this)"><span class="line-number">{{ r.line_num }}</span> <span class="code {{ r.label }}">{{ r.line }}</span></span>
-{% if r.reports %}<span class="reports">{% for rep in r.reports %}• {{ rep[0] }} tainted={{ rep[1] }} ({{ rep[2] }}){% endfor %}</span>{% endif %}{% endfor %}</pre>
+{% for r in results %}
+<div class="code-line" id="line-{{ r.line_num }}">
+  <span class="cursor-pointer {{ r.label }}" onclick="toggleDetails(this)" data-line="{{ r.line_num }}">
+    <span class="line-number">{{ r.line_num }}</span>
+    <span class="code {{ r.label }}">{{ r.line }}</span>
+  </span>
+  {% if r.reports %}
+  <div class="reports">
+    {% for rep in r.reports %}
+    <div class="report">🔸 <strong>{{ rep[0] }}</strong> - tainted={{ rep[1] }} ({{ rep[2] }})</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
 </div>
 <a href="{{ url_for('index') }}" class="mt-2 inline-block btn">Upload another file</a>
 {% endif %}
@@ -192,21 +241,32 @@ uploadLabel.addEventListener('drop', (e) => {
 }, false);
 
 // Toggle details AND scroll to line
-function toggleDetails(lineSpan) {
-  const reportsSpan = lineSpan.nextElementSibling;
-  if (reportsSpan && reportsSpan.classList.contains('reports')) {
-    const wasHidden = reportsSpan.style.display === 'none' || reportsSpan.style.display === '';
-    reportsSpan.style.display = wasHidden ? 'inline' : 'none';
+function toggleDetails(clickedSpan) {
+  // Find the parent code-line div
+  const codeLine = clickedSpan.closest('.code-line');
+  if (!codeLine) return;
+  
+  // Find the reports div within this code-line
+  const reportsDiv = codeLine.querySelector('.reports');
+  if (!reportsDiv) return;
+  
+  const wasHidden = reportsDiv.style.display === 'none' || reportsDiv.style.display === '';
+  reportsDiv.style.display = wasHidden ? 'block' : 'none';
+  
+  // Scroll to the line smoothly
+  if (wasHidden) {
+    codeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
     
-    // Scroll to the line smoothly
-    if (wasHidden) {
-      lineSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Add temporary highlight
-      lineSpan.style.backgroundColor = 'rgba(179, 119, 149, 0.3)';
-      setTimeout(() => {
-        lineSpan.style.backgroundColor = '';
-      }, 1000);
-    }
+    // Add temporary highlight to the entire line
+    codeLine.style.backgroundColor = 'rgba(179, 119, 149, 0.25)';
+    codeLine.style.borderLeft = '3px solid rgba(179, 119, 149, 0.7)';
+    codeLine.style.paddingLeft = '0.3rem';
+    
+    setTimeout(() => {
+      codeLine.style.backgroundColor = '';
+      codeLine.style.borderLeft = '';
+      codeLine.style.paddingLeft = '';
+    }, 2000);
   }
 }
 
