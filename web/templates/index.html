@@ -131,6 +131,13 @@ input[type="file"] { display:none; }
                       </span>
                     {% endif %}
                   </div>
+                  {% if scan.unsafe_lines > 0 %}
+                  <div class="mt-2">
+                    <button onclick="generateMitigation({{ scan.id }})" class="text-xs bg-[#8892BE] text-black px-2 py-1 rounded hover:bg-[#777BB3] transition-colors">
+                      🔧 Generate Fixes
+                    </button>
+                  </div>
+                  {% endif %}
                 </div>
                 <div class="text-xs text-gray-500">
                   {{ "%.1f"|format(scan.file_size / 1024) }} KB
@@ -494,6 +501,118 @@ function toggleDetails(clickedSpan) {
       codeLine.style.borderLeft = '';
       codeLine.style.paddingLeft = '';
     }, 2000);
+  }
+}
+
+// Generate mitigation suggestions for a scan
+async function generateMitigation(scanId) {
+  try {
+    // Show loading indicator
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '⏳ Generating...';
+    button.disabled = true;
+    
+    const response = await fetch(`/api/scan/${scanId}/mitigate`);
+    const data = await response.json();
+    
+    if (data.success) {
+      // Create a modal to display the mitigation report
+      showMitigationModal(data.report, data.filename);
+    } else {
+      alert('Error generating mitigation suggestions: ' + data.error);
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Failed to generate mitigation suggestions');
+  } finally {
+    // Restore button
+    const button = event.target;
+    button.innerHTML = originalText;
+    button.disabled = false;
+  }
+}
+
+// Show mitigation report in a modal
+function showMitigationModal(report, filename) {
+  // Create modal HTML
+  const modalHTML = `
+    <div id="mitigationModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+      <div class="bg-[#0f0f10] border border-[#8892BE] rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-[#8892BE]">🔧 Security Fixes for ${filename}</h2>
+            <button onclick="closeMitigationModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+          </div>
+          
+          <div class="mb-4 p-3 bg-[#1a1a1a] rounded border border-gray-700">
+            <div class="text-sm text-gray-300">
+              <strong>Summary:</strong> Found ${report.summary.total_vulnerabilities} vulnerabilities, generated ${report.summary.fixes_generated} fixes
+            </div>
+          </div>
+          
+          <div class="space-y-4">
+            ${report.fixes.map((fix, index) => `
+              <div class="border border-gray-700 rounded p-4">
+                <h3 class="text-lg font-semibold text-yellow-400 mb-2">Fix #${index + 1}: ${fix.type}</h3>
+                <div class="text-sm text-gray-400 mb-2">Line ${fix.line}</div>
+                
+                <div class="mb-3">
+                  <h4 class="text-sm font-semibold text-red-300 mb-1">Vulnerable Code:</h4>
+                  <pre class="bg-red-900 bg-opacity-20 p-2 rounded text-sm overflow-x-auto"><code>${fix.original}</code></pre>
+                </div>
+                
+                <div class="mb-3">
+                  <h4 class="text-sm font-semibold text-green-300 mb-1">Secure Fix:</h4>
+                  <pre class="bg-green-900 bg-opacity-20 p-2 rounded text-sm overflow-x-auto"><code>${fix.fixed}</code></pre>
+                </div>
+                
+                <div class="text-sm text-gray-300">
+                  <strong>Explanation:</strong> ${fix.explanation}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          
+          <div class="mt-6 text-center">
+            <button onclick="copyMitigationReport()" class="bg-[#8892BE] text-black px-4 py-2 rounded hover:bg-[#777BB3] transition-colors mr-2">
+              📋 Copy Report
+            </button>
+            <button onclick="closeMitigationModal()" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Add modal to page
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+  
+  // Store report data for copying
+  window.currentMitigationReport = report;
+}
+
+// Close mitigation modal
+function closeMitigationModal() {
+  const modal = document.getElementById('mitigationModal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+// Copy mitigation report to clipboard
+function copyMitigationReport() {
+  if (window.currentMitigationReport) {
+    navigator.clipboard.writeText(window.currentMitigationReport.report_text)
+      .then(() => {
+        alert('Mitigation report copied to clipboard!');
+      })
+      .catch(err => {
+        console.error('Failed to copy: ', err);
+        alert('Failed to copy report to clipboard');
+      });
   }
 }
 

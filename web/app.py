@@ -7,6 +7,7 @@ import pickle
 from werkzeug.utils import secure_filename
 import sys
 from scripts.detect_lines import predict_file
+from code_mitigator import create_mitigator
 import pandas as pd
 from io import StringIO
 import csv
@@ -261,33 +262,213 @@ def delete_scan(scan_id):
 
 @app.route("/api/stats")
 def api_stats():
-    """API endpoint for statistics"""
+    """API endpoint for comprehensive statistics"""
+    from datetime import datetime, timedelta
+    
     total_scans = Scan.query.count()
     total_files = db.session.query(db.func.count(db.func.distinct(Scan.filename))).scalar()
     total_unsafe_lines = db.session.query(db.func.sum(Scan.unsafe_lines)).scalar() or 0
     total_safe_lines = db.session.query(db.func.sum(Scan.safe_lines)).scalar() or 0
+    total_lines = total_unsafe_lines + total_safe_lines
     
-    # Vulnerability rate over time (last 30 days)
-    from datetime import datetime, timedelta
+    # Calculate overall vulnerability rate
+    overall_vuln_rate = (total_unsafe_lines / total_lines * 100) if total_lines > 0 else 0
+    
+    # Vulnerability rate over time (last 30 days) - grouped by day
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
     recent_scans = Scan.query.filter(Scan.timestamp >= thirty_days_ago).all()
     
-    vulnerability_trend = []
+    # Group by date and calculate daily averages
+    daily_data = {}
     for scan in recent_scans:
-        rate = round((scan.unsafe_lines / scan.total_lines * 100), 2) if scan.total_lines > 0 else 0
+        date_key = scan.timestamp.date().isoformat()
+        if date_key not in daily_data:
+            daily_data[date_key] = {'total_unsafe': 0, 'total_lines': 0, 'scan_count': 0}
+        
+        daily_data[date_key]['total_unsafe'] += scan.unsafe_lines or 0
+        daily_data[date_key]['total_lines'] += scan.total_lines or 0
+        daily_data[date_key]['scan_count'] += 1
+    
+    vulnerability_trend = []
+    for date, data in sorted(daily_data.items()):
+        rate = (data['total_unsafe'] / data['total_lines'] * 100) if data['total_lines'] > 0 else 0
         vulnerability_trend.append({
-            'date': scan.timestamp.isoformat(),
-            'rate': rate,
-            'filename': scan.filename
+            'date': date,
+            'rate': round(rate, 2),
+            'scans': data['scan_count'],
+            'unsafe_lines': data['total_unsafe'],
+            'total_lines': data['total_lines']
         })
+    
+    # Most scanned files (top 10)
+    most_scanned_raw = db.session.query(
+        Scan.filename,
+        db.func.count(Scan.id).label('scan_count'),
+        db.func.avg(Scan.unsafe_lines).label('avg_unsafe'),
+        db.func.max(Scan.timestamp).label('last_scanned')
+    ).group_by(Scan.filename).order_by(db.func.count(Scan.id).desc()).limit(10).all()
+    
+    most_scanned_files = []
+    for row in most_scanned_raw:
+        most_scanned_files.append({
+            'filename': row.filename,
+            'scan_count': row.scan_count,
+            'avg_unsafe': round(float(row.avg_unsafe) if row.avg_unsafe else 0, 1),
+            'last_scanned': row.last_scanned.isoformat() if row.last_scanned else None
+        })
+    
+    # Risk distribution
+    all_scans = Scan.query.all()
+    risk_distribution = {'high_risk': 0, 'medium_risk': 0, 'low_risk': 0, 'safe': 0}
+    
+    for scan in all_scans:
+        if scan.total_lines > 0:
+            vuln_rate = scan.unsafe_lines / scan.total_lines
+            if vuln_rate > 0.1:
+                risk_distribution['high_risk'] += 1
+            elif vuln_rate > 0.05:
+                risk_distribution['medium_risk'] += 1
+            elif vuln_rate > 0:
+                risk_distribution['low_risk'] += 1
+            else:
+                risk_distribution['safe'] += 1
+        else:
+            risk_distribution['safe'] += 1
+    
+    # Recent activity (last 7 days)
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    recent_activity_scans = Scan.query.filter(Scan.timestamp >= seven_days_ago).all()
+    
+    activity_by_date = {}
+    for scan in recent_activity_scans:
+        date_key = scan.timestamp.date().isoformat()
+        activity_by_date[date_key] = activity_by_date.get(date_key, 0) + 1
+    
+    recent_activity = [{'date': date, 'scans': count} for date, count in sorted(activity_by_date.items())]
+    
+    # File size statistics
+    file_sizes = [scan.file_size for scan in all_scans if scan.file_size]
+    file_size_stats = {
+        'avg_size': round(sum(file_sizes) / len(file_sizes), 2) if file_sizes else 0,
+        'min_size': min(file_sizes) if file_sizes else 0,
+        'max_size': max(file_sizes) if file_sizes else 0
+    }
     
     return jsonify({
         'total_scans': total_scans,
         'total_files': total_files,
         'total_unsafe_lines': total_unsafe_lines,
         'total_safe_lines': total_safe_lines,
-        'vulnerability_trend': vulnerability_trend
+        'overall_vulnerability_rate': round(overall_vuln_rate, 2),
+        'vulnerability_trend': vulnerability_trend,
+        'most_scanned_files': most_scanned_files,
+        'risk_distribution': risk_distribution,
+        'recent_activity': recent_activity,
+        'file_size_stats': file_size_stats,
+        
+        # Additional security metrics
+        'security_metrics': {
+            'detection_rate': round(overall_vuln_rate, 2),  # Same as vulnerability rate
+            'false_positive_estimate': 22.8,  # Based on our model's FPR
+            'model_confidence': 95.6,  # Based on our recall rate
+            'coverage_score': min(100, round((total_scans / max(total_files, 1)) * 20, 1)),  # Normalize to 0-100% scale
+            'threat_level': 'Medium' if overall_vuln_rate > 10 else 'Low' if overall_vuln_rate > 5 else 'Minimal',
+            'scan_frequency': round(total_scans / max(total_files, 1), 1),  # Average scans per file
+            'high_risk_files': risk_distribution['high_risk'],
+            'total_lines_analyzed': total_unsafe_lines + total_safe_lines
+        },
+        
+        # Model performance metrics
+        'model_performance': {
+            'precision': 39.8,  # From our evaluation
+            'recall': 95.6,     # From our evaluation  
+            'f1_score': 56.2,   # From our evaluation
+            'threshold': 0.719, # Optimal threshold
+            'accuracy': 77.2,   # From our evaluation
+            'specificity': 77.2 # True negative rate
+        }
     })
+
+@app.route('/api/scan/<int:scan_id>/mitigate', methods=['GET'])
+def mitigate_vulnerabilities(scan_id):
+    """Generate mitigation suggestions for a specific scan"""
+    try:
+        scan = Scan.query.get_or_404(scan_id)
+        
+        # Parse the scan results
+        scan_results = json.loads(scan.results)
+        
+        # Create mitigator and analyze vulnerabilities
+        mitigator = create_mitigator()
+        fixes = mitigator.analyze_and_fix_vulnerabilities(scan_results)
+        
+        # Generate comprehensive report
+        report = mitigator.generate_fix_report(fixes, scan.filename)
+        
+        return jsonify({
+            'success': True,
+            'scan_id': scan_id,
+            'filename': scan.filename,
+            'report': report
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/mitigate', methods=['POST'])
+def mitigate_code():
+    """Generate mitigation suggestions for uploaded code"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if file and file.filename.lower().endswith('.php'):
+            # Save uploaded file temporarily
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(filepath)
+            
+            try:
+                # Scan for vulnerabilities
+                results = predict_file(model, vectorizer, filepath)
+                
+                # Generate mitigation suggestions
+                mitigator = create_mitigator()
+                fixes = mitigator.analyze_and_fix_vulnerabilities(results)
+                report = mitigator.generate_fix_report(fixes, filename)
+                
+                # Clean up temporary file
+                os.remove(filepath)
+                
+                return jsonify({
+                    'success': True,
+                    'filename': filename,
+                    'scan_results': len(results),
+                    'vulnerabilities_found': len([r for r in results if (isinstance(r, dict) and r.get('label') == 'unsafe') or (isinstance(r, tuple) and len(r) >= 3 and r[2] == 'unsafe')]),
+                    'fixes_generated': len(fixes),
+                    'report': report
+                })
+                
+            except Exception as e:
+                # Clean up on error
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                raise e
+        
+        return jsonify({'error': 'Invalid file type. Please upload a PHP file.'}), 400
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 if __name__ == "__main__":
