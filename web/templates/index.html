@@ -173,10 +173,12 @@ input[type="file"] { display:none; }
 <div class="code-line" id="line-{{ r.line_num }}">
   {% set stripped_line = r.line.strip() %}
   {% set is_comment = stripped_line.startswith('//') or stripped_line.startswith('/*') or (stripped_line.startswith('*') and not stripped_line.startswith('*/')) or stripped_line == '/*' or stripped_line.startswith('#') %}
-  {% if is_comment %}
-    <span class="comment-line" onclick="jumpToFirstError({{ r.line_num }})" data-line="{{ r.line_num }}">
+  {% set is_descriptive = 'Uses a' in r.line or 'Input :' in r.line or 'SANITIZE :' in r.line or 'construction :' in r.line or 'execute a' in r.line or 'Flushes content' in r.line %}
+  
+  {% if is_comment or is_descriptive %}
+    <span class="comment-line" onclick="jumpToRelatedCode({{ r.line_num }}, '{{ r.line|e }}')" data-line="{{ r.line_num }}">
       <span class="line-number">{{ r.line_num }}</span>
-      <span class="code">{{ r.line }}</span>
+      <span class="code {{ r.label }}">{{ r.line }}</span>
     </span>
   {% else %}
     <span class="cursor-pointer {{ r.label }}" onclick="toggleDetails(this)" data-line="{{ r.line_num }}">
@@ -254,13 +256,184 @@ uploadLabel.addEventListener('drop', (e) => {
   }
 }, false);
 
-// Jump to first error after a comment line
-function jumpToFirstError(commentLineNum) {
+// Jump to related code based on description
+function jumpToRelatedCode(commentLineNum, commentText) {
+  console.log('🚀 jumpToRelatedCode called with line:', commentLineNum, 'text:', commentText);
+  
   // Find all code-line divs
   const allLines = document.querySelectorAll('.code-line');
+  console.log('Found', allLines.length, 'total lines');
   
-  // Find the first unsafe line after this comment
-  let foundComment = false;
+  // Extract search terms with multiple strategies
+  let searchTerms = [];
+  
+  // Strategy 1: Direct function/keyword matching
+  const directMatches = [
+    'filter_var', 'mysql_real_escape_string', 'system(', 'exec(', 'shell_exec', 'passthru', 'eval(',
+    '$_GET', '$_POST', '$_REQUEST', '$_COOKIE', '$_SESSION', '$_SERVER',
+    'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'mysql_query', 'mysqli_query',
+    'FILTER_VALIDATE_EMAIL', 'FILTER_SANITIZE', 'FILTER_VALIDATE',
+    'include', 'require', 'file_get_contents', 'fopen', 'fwrite',
+    'echo', 'print', 'printf', 'sprintf'
+  ];
+  
+  for (let match of directMatches) {
+    if (commentText.toLowerCase().includes(match.toLowerCase())) {
+      searchTerms.push(match);
+    }
+  }
+  
+  // Strategy 2: Extract variable names (starting with $)
+  const variableMatches = commentText.match(/\$\w+/g);
+  if (variableMatches) {
+    searchTerms.push(...variableMatches);
+  }
+  
+  // Strategy 3: Extract quoted strings
+  const quotedMatches = commentText.match(/'([^']+)'/g) || commentText.match(/"([^"]+)"/g);
+  if (quotedMatches) {
+    quotedMatches.forEach(match => {
+      const term = match.replace(/['"]/g, '');
+      if (term.length > 2) {
+        searchTerms.push(term);
+      }
+    });
+  }
+  
+  // Strategy 4: Special pattern matching with exact targeting
+  if (commentText.includes('email_filter') || commentText.includes('email')) {
+    searchTerms.push('FILTER_VALIDATE_EMAIL', 'filter_var', 'EMAIL');
+  }
+  if (commentText.includes('concatenation') || commentText.includes('concat')) {
+    searchTerms.push('.', '+', 'concat');
+  }
+  if (commentText.includes('query') || commentText.includes('database')) {
+    searchTerms.push('SELECT', 'INSERT', 'UPDATE', 'DELETE', 'mysql', 'mysqli');
+  }
+  if (commentText.includes('command') || commentText.includes('execute')) {
+    searchTerms.push('system', 'exec', 'shell_exec', 'passthru');
+  }
+  if (commentText.includes('input') || commentText.includes('Input')) {
+    searchTerms.push('$_GET', '$_POST', '$_REQUEST');
+  }
+  if (commentText.includes('sanitize') || commentText.includes('SANITIZE')) {
+    searchTerms.push('FILTER_SANITIZE', 'filter_var');
+  }
+  if (commentText.includes('validate') || commentText.includes('VALIDATE')) {
+    searchTerms.push('FILTER_VALIDATE', 'filter_var');
+  }
+  if (commentText.includes('filter') && commentText.includes('not applied')) {
+    searchTerms.push('if (', 'filter_var', 'FILTER_');
+  }
+  if (commentText.includes('Flushes content')) {
+    searchTerms.push('if (', 'else');
+  }
+  
+  // Specific pattern for the exact case mentioned
+  if (commentText.includes('Flushes content of $sanitized if the filter email_filter is not applied')) {
+    searchTerms.push('if (filter_var($sanitized, FILTER_VALIDATE_EMAIL))');
+  }
+  
+  // Strategy 5: Extract function names ending with ()
+  const functionMatches = commentText.match(/\w+\(\)/g);
+  if (functionMatches) {
+    functionMatches.forEach(match => {
+      searchTerms.push(match.replace('()', '('));
+      searchTerms.push(match.replace('()', ''));
+    });
+  }
+  
+  // Strategy 6: Extract FILTER constants
+  const filterMatches = commentText.match(/FILTER_\w+/gi);
+  if (filterMatches) {
+    searchTerms.push(...filterMatches);
+  }
+  
+  // Remove duplicates and empty strings
+  searchTerms = [...new Set(searchTerms.filter(term => term && term.length > 1))];
+  
+  console.log('Searching for terms:', searchTerms);
+  console.log('Comment text:', commentText);
+  console.log('Comment line number:', commentLineNum);
+  
+  // Multi-pass search with different priorities
+  const searchPasses = [
+    // Pass 1: Exact matches (highest priority)
+    (codeText, term) => codeText.includes(term),
+    // Pass 2: Case-insensitive matches
+    (codeText, term) => codeText.toLowerCase().includes(term.toLowerCase()),
+    // Pass 3: Partial matches for longer terms
+    (codeText, term) => term.length > 4 && codeText.toLowerCase().includes(term.toLowerCase().substring(0, term.length - 1)),
+    // Pass 4: Word boundary matches (for variables and functions)
+    (codeText, term) => {
+      if (term.startsWith('$') || term.includes('(')) {
+        const regex = new RegExp('\\b' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        return regex.test(codeText);
+      }
+      return false;
+    },
+    // Pass 5: Substring matches for complex terms
+    (codeText, term) => {
+      if (term.length > 6) {
+        const parts = term.split('_');
+        return parts.some(part => part.length > 3 && codeText.toLowerCase().includes(part.toLowerCase()));
+      }
+      return false;
+    }
+  ];
+  
+  for (let passIndex = 0; passIndex < searchPasses.length; passIndex++) {
+    const searchFunction = searchPasses[passIndex];
+    
+    for (let line of allLines) {
+      const lineId = line.id;
+      const lineNum = parseInt(lineId.replace('line-', ''));
+      
+      if (lineNum > commentLineNum) {
+        const codeSpan = line.querySelector('.code');
+        if (codeSpan) {
+          const codeText = codeSpan.textContent;
+          
+          // Debug: log what we're checking
+          if (passIndex === 0) { // Only log on first pass to avoid spam
+            console.log(`Checking line ${lineNum}: "${codeText.trim()}"`);
+          }
+          
+          // Check if this line contains any of our search terms
+          for (let term of searchTerms) {
+            if (searchFunction(codeText, term)) {
+              console.log(`✅ Found matching code at line ${lineNum} with term: "${term}" (pass ${passIndex + 1})`);
+              console.log(`Code text: "${codeText.trim()}"`);
+              
+              // Found matching code, scroll to it and highlight
+              line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              
+              // Highlight it
+              line.style.backgroundColor = 'rgba(179, 119, 149, 0.25)';
+              line.style.borderLeft = '3px solid rgba(179, 119, 149, 0.7)';
+              line.style.paddingLeft = '0.3rem';
+              
+              // Show the reports if it has any
+              const reportsDiv = line.querySelector('.reports');
+              if (reportsDiv) {
+                reportsDiv.style.display = 'block';
+              }
+              
+              setTimeout(() => {
+                line.style.backgroundColor = '';
+                line.style.borderLeft = '';
+                line.style.paddingLeft = '';
+              }, 3000);
+              
+              return;
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Final fallback: find the first unsafe line after the comment
   for (let line of allLines) {
     const lineId = line.id;
     const lineNum = parseInt(lineId.replace('line-', ''));
@@ -268,15 +441,13 @@ function jumpToFirstError(commentLineNum) {
     if (lineNum > commentLineNum) {
       const unsafeSpan = line.querySelector('.unsafe');
       if (unsafeSpan) {
-        // Found the first error, scroll to it and highlight
+        console.log('Final fallback: Found first error at line', lineNum);
         line.scrollIntoView({ behavior: 'smooth', block: 'center' });
         
-        // Highlight it
         line.style.backgroundColor = 'rgba(179, 119, 149, 0.25)';
         line.style.borderLeft = '3px solid rgba(179, 119, 149, 0.7)';
         line.style.paddingLeft = '0.3rem';
         
-        // Show the reports
         const reportsDiv = line.querySelector('.reports');
         if (reportsDiv) {
           reportsDiv.style.display = 'block';
@@ -286,12 +457,14 @@ function jumpToFirstError(commentLineNum) {
           line.style.backgroundColor = '';
           line.style.borderLeft = '';
           line.style.paddingLeft = '';
-        }, 2000);
+        }, 3000);
         
         return;
       }
     }
   }
+  
+  console.log('No matching code found for comment:', commentText);
 }
 
 // Toggle details AND scroll to line
