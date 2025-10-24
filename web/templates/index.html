@@ -26,24 +26,65 @@ input[type="file"] { display:none; }
   padding:0.5rem 1rem;
   border-radius:0.5rem;
   font-family: monospace;
-  white-space: pre;
-  word-break: normal;
   margin-top:1rem;
   font-size:0.85rem;
-  line-height:1rem;
+  line-height: 1.2rem;
 }
 
-/* Inline line number and code */
-.line-number { color:#666; width:3ch; display:inline-block; text-align:right; user-select:none; }
-.code { display:inline; }
+/* Code line container */
+.code-line {
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+.code-line:hover {
+  background-color: rgba(136,146,190,0.05);
+}
+
+/* Line number and code */
+.line-number { 
+  color:#666; 
+  width:3ch; 
+  display:inline-block; 
+  text-align:right; 
+  user-select:none;
+  margin-right: 0.5rem;
+}
+.code { 
+  display:inline; 
+  white-space: pre;
+}
 .safe { color:#8892BE; }
-.unsafe { color:#b37795; }
-.unsafe:hover { background-color: rgba(136,146,190,0.15); cursor:pointer; }
+.unsafe { color:#b37795; cursor:pointer; }
+.unsafe:hover { background-color: rgba(179, 119, 149, 0.2); }
 
+/* Comment lines that can jump to code */
+.comment-line {
+  color: #7a8a9e;
+  cursor: pointer;
+}
+.comment-line:hover {
+  color: #8892BE;
+  text-decoration: underline;
+}
 
-/* Reports hidden until click */
-.reports { font-size:0.75rem; color:#aaa; display:none; margin-left:4ch; line-height:1rem; }
-.report { padding:0; }
+/* Reports - display on new line */
+.reports { 
+  font-size:0.7rem; 
+  color:#f4c542; 
+  display:none; 
+  margin-left:4ch;
+  padding: 0.15rem 0 0.15rem 0.5rem;
+  line-height:1.1rem;
+  background-color: rgba(244, 197, 66, 0.05);
+  border-left: 2px solid rgba(244, 197, 66, 0.3);
+}
+.report { 
+  display: block;
+  margin: 0;
+  padding: 0;
+}
 .cursor-pointer { cursor:pointer; }
 
 .tab-btn.active {
@@ -61,7 +102,7 @@ input[type="file"] { display:none; }
   <div class="flex border-b border-gray-700">
     <button class="tab-btn font-bold text-[#8892BE] px-4 py-2" data-tab="uploadTab">Upload</button>
     <button class="tab-btn text-gray-400 px-4 py-2" data-tab="historyTab">Past Scans</button>
-
+    <a href="/database" class="tab-btn text-gray-400 px-4 py-2 hover:text-[#8892BE]">Database</a>
   </div>
 
  
@@ -70,15 +111,41 @@ input[type="file"] { display:none; }
   </div>
     <div id="historyTab" class="tab-content hidden">
       {% if past_scans %}
-        <ul class="list-disc pl-5 text-[#8892BE]">
+        <div class="space-y-2">
           {% for scan in past_scans %}
-            <li>
-              <a href="{{ url_for('view_scan', scan_id=scan.id) }}" class="hover:underline">
-                {{ scan.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} - {{ scan.filename }}
-              </a>
-            </li>
+            <div class="bg-[#0f0f10] p-3 rounded border border-gray-700 hover:border-[#8892BE] transition-colors">
+              <div class="flex justify-between items-start">
+                <div class="flex-1">
+                  <a href="{{ url_for('view_scan', scan_id=scan.id) }}" class="text-[#8892BE] hover:underline font-medium">
+                    {{ scan.filename }}
+                  </a>
+                  <div class="text-sm text-gray-400 mt-1">
+                    {{ scan.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+                  </div>
+                  <div class="text-xs text-gray-500 mt-1">
+                    {% if scan.total_lines > 0 %}
+                      {% set rate = (scan.unsafe_lines / scan.total_lines * 100) %}
+                      {{ scan.total_lines }} lines | {{ scan.unsafe_lines }} unsafe | 
+                      <span class="{% if rate > 50 %}text-red-400{% elif rate > 20 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                        {{ "%.1f"|format(rate) }}% vulnerability rate
+                      </span>
+                    {% endif %}
+                  </div>
+                  {% if scan.unsafe_lines > 0 %}
+                  <div class="mt-2">
+                    <button onclick="generateMitigation({{ scan.id }})" class="text-xs bg-[#8892BE] text-black px-2 py-1 rounded hover:bg-[#777BB3] transition-colors">
+                      🔧 Generate Fixes
+                    </button>
+                  </div>
+                  {% endif %}
+                </div>
+                <div class="text-xs text-gray-500">
+                  {{ "%.1f"|format(scan.file_size / 1024) }} KB
+                </div>
+              </div>
+            </div>
           {% endfor %}
-        </ul>
+        </div>
       {% else %}
         <p class="text-gray-400 mt-2">No past scans yet.</p>
       {% endif %}
@@ -109,8 +176,32 @@ input[type="file"] { display:none; }
 {% if results %}
 <h2 class="text-2xl font-bold mt-6 mb-2 text-[#8892BE]">Scan Results for {{ filename }}</h2>
 <div id="resultsContent">
-<pre>{% for r in results %}<span class="cursor-pointer {{ r.label }}" onclick="toggleDetails(this)"><span class="line-number">{{ r.line_num }}</span> <span class="code {{ r.label }}">{{ r.line }}</span></span>
-{% if r.reports %}<span class="reports">{% for rep in r.reports %}• {{ rep[0] }} tainted={{ rep[1] }} ({{ rep[2] }}){% endfor %}</span>{% endif %}{% endfor %}</pre>
+{% for r in results %}
+<div class="code-line" id="line-{{ r.line_num }}">
+  {% set stripped_line = r.line.strip() %}
+  {% set is_comment = stripped_line.startswith('//') or stripped_line.startswith('/*') or (stripped_line.startswith('*') and not stripped_line.startswith('*/')) or stripped_line == '/*' or stripped_line.startswith('#') %}
+  {% set is_descriptive = 'Uses a' in r.line or 'Input :' in r.line or 'SANITIZE :' in r.line or 'construction :' in r.line or 'execute a' in r.line or 'Flushes content' in r.line %}
+  
+  {% if is_comment or is_descriptive %}
+    <span class="comment-line" onclick="jumpToRelatedCode({{ r.line_num }}, '{{ r.line|e }}')" data-line="{{ r.line_num }}">
+      <span class="line-number">{{ r.line_num }}</span>
+      <span class="code {{ r.label }}">{{ r.line }}</span>
+    </span>
+  {% else %}
+    <span class="cursor-pointer {{ r.label }}" onclick="toggleDetails(this)" data-line="{{ r.line_num }}">
+      <span class="line-number">{{ r.line_num }}</span>
+      <span class="code {{ r.label }}">{{ r.line }}</span>
+    </span>
+    {% if r.reports %}
+    <div class="reports">
+      {% for rep in r.reports %}
+      <div class="report">🔸 <strong>{{ rep[0] }}</strong> - tainted={{ rep[1] }} ({{ rep[2] }})</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endif %}
+</div>
+{% endfor %}
 </div>
 <a href="{{ url_for('index') }}" class="mt-2 inline-block btn">Upload another file</a>
 {% endif %}
@@ -122,7 +213,10 @@ PHP Vulnerability Scanner &copy; 2025
 <script>
 const fileInput = document.querySelector('input[type="file"]');
 const fileNameDiv = document.getElementById('selectedFileName');
+const uploadLabel = document.querySelector('label[for], label:has(input[type="file"])');
+const uploadForm = document.getElementById('uploadForm');
 
+// File selection change handler
 fileInput.addEventListener('change', () => {
     if (fileInput.files.length > 0) {
         fileNameDiv.textContent = "Selected file: " + fileInput.files[0].name;
@@ -130,10 +224,398 @@ fileInput.addEventListener('change', () => {
         fileNameDiv.textContent = "";
     }
 });
-function toggleDetails(lineSpan) {
-  const reportsSpan = lineSpan.nextElementSibling;
-  if (reportsSpan && reportsSpan.classList.contains('reports')) {
-    reportsSpan.style.display = reportsSpan.style.display === 'inline' ? 'none' : 'inline';
+
+// Drag and Drop functionality
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+  uploadForm.addEventListener(eventName, preventDefaults, false);
+});
+
+function preventDefaults(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+// Highlight drop area when dragging over it
+['dragenter', 'dragover'].forEach(eventName => {
+  uploadLabel.addEventListener(eventName, () => {
+    uploadLabel.style.borderColor = '#8892BE';
+    uploadLabel.style.backgroundColor = 'rgba(136, 146, 190, 0.1)';
+  }, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+  uploadLabel.addEventListener(eventName, () => {
+    uploadLabel.style.borderColor = '#777BB3';
+    uploadLabel.style.backgroundColor = '';
+  }, false);
+});
+
+// Handle dropped files
+uploadLabel.addEventListener('drop', (e) => {
+  const dt = e.dataTransfer;
+  const files = dt.files;
+  
+  if (files.length > 0) {
+    fileInput.files = files;
+    // Trigger change event
+    const event = new Event('change', { bubbles: true });
+    fileInput.dispatchEvent(event);
+  }
+}, false);
+
+// Jump to related code based on description
+function jumpToRelatedCode(commentLineNum, commentText) {
+  console.log('🚀 jumpToRelatedCode called with line:', commentLineNum, 'text:', commentText);
+  
+  // Find all code-line divs
+  const allLines = document.querySelectorAll('.code-line');
+  console.log('Found', allLines.length, 'total lines');
+  
+  // Extract search terms with multiple strategies
+  let searchTerms = [];
+  
+  // Strategy 1: Direct function/keyword matching
+  const directMatches = [
+    'filter_var', 'mysql_real_escape_string', 'system(', 'exec(', 'shell_exec', 'passthru', 'eval(',
+    '$_GET', '$_POST', '$_REQUEST', '$_COOKIE', '$_SESSION', '$_SERVER',
+    'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'mysql_query', 'mysqli_query',
+    'FILTER_VALIDATE_EMAIL', 'FILTER_SANITIZE', 'FILTER_VALIDATE',
+    'include', 'require', 'file_get_contents', 'fopen', 'fwrite',
+    'echo', 'print', 'printf', 'sprintf'
+  ];
+  
+  for (let match of directMatches) {
+    if (commentText.toLowerCase().includes(match.toLowerCase())) {
+      searchTerms.push(match);
+    }
+  }
+  
+  // Strategy 2: Extract variable names (starting with $)
+  const variableMatches = commentText.match(/\$\w+/g);
+  if (variableMatches) {
+    searchTerms.push(...variableMatches);
+  }
+  
+  // Strategy 3: Extract quoted strings
+  const quotedMatches = commentText.match(/'([^']+)'/g) || commentText.match(/"([^"]+)"/g);
+  if (quotedMatches) {
+    quotedMatches.forEach(match => {
+      const term = match.replace(/['"]/g, '');
+      if (term.length > 2) {
+        searchTerms.push(term);
+      }
+    });
+  }
+  
+  // Strategy 4: Special pattern matching with exact targeting
+  if (commentText.includes('email_filter') || commentText.includes('email')) {
+    searchTerms.push('FILTER_VALIDATE_EMAIL', 'filter_var', 'EMAIL');
+  }
+  if (commentText.includes('concatenation') || commentText.includes('concat')) {
+    searchTerms.push('.', '+', 'concat');
+  }
+  if (commentText.includes('query') || commentText.includes('database')) {
+    searchTerms.push('SELECT', 'INSERT', 'UPDATE', 'DELETE', 'mysql', 'mysqli');
+  }
+  if (commentText.includes('command') || commentText.includes('execute')) {
+    searchTerms.push('system', 'exec', 'shell_exec', 'passthru');
+  }
+  if (commentText.includes('input') || commentText.includes('Input')) {
+    searchTerms.push('$_GET', '$_POST', '$_REQUEST');
+  }
+  if (commentText.includes('sanitize') || commentText.includes('SANITIZE')) {
+    searchTerms.push('FILTER_SANITIZE', 'filter_var');
+  }
+  if (commentText.includes('validate') || commentText.includes('VALIDATE')) {
+    searchTerms.push('FILTER_VALIDATE', 'filter_var');
+  }
+  if (commentText.includes('filter') && commentText.includes('not applied')) {
+    searchTerms.push('if (', 'filter_var', 'FILTER_');
+  }
+  if (commentText.includes('Flushes content')) {
+    searchTerms.push('if (', 'else');
+  }
+  
+  // Specific pattern for the exact case mentioned
+  if (commentText.includes('Flushes content of $sanitized if the filter email_filter is not applied')) {
+    searchTerms.push('if (filter_var($sanitized, FILTER_VALIDATE_EMAIL))');
+  }
+  
+  // Strategy 5: Extract function names ending with ()
+  const functionMatches = commentText.match(/\w+\(\)/g);
+  if (functionMatches) {
+    functionMatches.forEach(match => {
+      searchTerms.push(match.replace('()', '('));
+      searchTerms.push(match.replace('()', ''));
+    });
+  }
+  
+  // Strategy 6: Extract FILTER constants
+  const filterMatches = commentText.match(/FILTER_\w+/gi);
+  if (filterMatches) {
+    searchTerms.push(...filterMatches);
+  }
+  
+  // Remove duplicates and empty strings
+  searchTerms = [...new Set(searchTerms.filter(term => term && term.length > 1))];
+  
+  console.log('Searching for terms:', searchTerms);
+  console.log('Comment text:', commentText);
+  console.log('Comment line number:', commentLineNum);
+  
+  // Multi-pass search with different priorities
+  const searchPasses = [
+    // Pass 1: Exact matches (highest priority)
+    (codeText, term) => codeText.includes(term),
+    // Pass 2: Case-insensitive matches
+    (codeText, term) => codeText.toLowerCase().includes(term.toLowerCase()),
+    // Pass 3: Partial matches for longer terms
+    (codeText, term) => term.length > 4 && codeText.toLowerCase().includes(term.toLowerCase().substring(0, term.length - 1)),
+    // Pass 4: Word boundary matches (for variables and functions)
+    (codeText, term) => {
+      if (term.startsWith('$') || term.includes('(')) {
+        const regex = new RegExp('\\b' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        return regex.test(codeText);
+      }
+      return false;
+    },
+    // Pass 5: Substring matches for complex terms
+    (codeText, term) => {
+      if (term.length > 6) {
+        const parts = term.split('_');
+        return parts.some(part => part.length > 3 && codeText.toLowerCase().includes(part.toLowerCase()));
+      }
+      return false;
+    }
+  ];
+  
+  for (let passIndex = 0; passIndex < searchPasses.length; passIndex++) {
+    const searchFunction = searchPasses[passIndex];
+    
+    for (let line of allLines) {
+      const lineId = line.id;
+      const lineNum = parseInt(lineId.replace('line-', ''));
+      
+      if (lineNum > commentLineNum) {
+        const codeSpan = line.querySelector('.code');
+        if (codeSpan) {
+          const codeText = codeSpan.textContent;
+          
+          // Debug: log what we're checking
+          if (passIndex === 0) { // Only log on first pass to avoid spam
+            console.log(`Checking line ${lineNum}: "${codeText.trim()}"`);
+          }
+          
+          // Check if this line contains any of our search terms
+          for (let term of searchTerms) {
+            if (searchFunction(codeText, term)) {
+              console.log(`✅ Found matching code at line ${lineNum} with term: "${term}" (pass ${passIndex + 1})`);
+              console.log(`Code text: "${codeText.trim()}"`);
+              
+              // Found matching code, scroll to it and highlight
+              line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              
+              // Highlight it
+              line.style.backgroundColor = 'rgba(179, 119, 149, 0.25)';
+              line.style.borderLeft = '3px solid rgba(179, 119, 149, 0.7)';
+              line.style.paddingLeft = '0.3rem';
+              
+              // Show the reports if it has any
+              const reportsDiv = line.querySelector('.reports');
+              if (reportsDiv) {
+                reportsDiv.style.display = 'block';
+              }
+              
+              setTimeout(() => {
+                line.style.backgroundColor = '';
+                line.style.borderLeft = '';
+                line.style.paddingLeft = '';
+              }, 3000);
+              
+              return;
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Final fallback: find the first unsafe line after the comment
+  for (let line of allLines) {
+    const lineId = line.id;
+    const lineNum = parseInt(lineId.replace('line-', ''));
+    
+    if (lineNum > commentLineNum) {
+      const unsafeSpan = line.querySelector('.unsafe');
+      if (unsafeSpan) {
+        console.log('Final fallback: Found first error at line', lineNum);
+        line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        line.style.backgroundColor = 'rgba(179, 119, 149, 0.25)';
+        line.style.borderLeft = '3px solid rgba(179, 119, 149, 0.7)';
+        line.style.paddingLeft = '0.3rem';
+        
+        const reportsDiv = line.querySelector('.reports');
+        if (reportsDiv) {
+          reportsDiv.style.display = 'block';
+        }
+        
+        setTimeout(() => {
+          line.style.backgroundColor = '';
+          line.style.borderLeft = '';
+          line.style.paddingLeft = '';
+        }, 3000);
+        
+        return;
+      }
+    }
+  }
+  
+  console.log('No matching code found for comment:', commentText);
+}
+
+// Toggle details AND scroll to line
+function toggleDetails(clickedSpan) {
+  // Find the parent code-line div
+  const codeLine = clickedSpan.closest('.code-line');
+  if (!codeLine) return;
+  
+  // Find the reports div within this code-line
+  const reportsDiv = codeLine.querySelector('.reports');
+  if (!reportsDiv) return;
+  
+  const wasHidden = reportsDiv.style.display === 'none' || reportsDiv.style.display === '';
+  reportsDiv.style.display = wasHidden ? 'block' : 'none';
+  
+  // Scroll to the line smoothly
+  if (wasHidden) {
+    codeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // Add temporary highlight to the entire line
+    codeLine.style.backgroundColor = 'rgba(179, 119, 149, 0.25)';
+    codeLine.style.borderLeft = '3px solid rgba(179, 119, 149, 0.7)';
+    codeLine.style.paddingLeft = '0.3rem';
+    
+    setTimeout(() => {
+      codeLine.style.backgroundColor = '';
+      codeLine.style.borderLeft = '';
+      codeLine.style.paddingLeft = '';
+    }, 2000);
+  }
+}
+
+// Generate mitigation suggestions for a scan
+async function generateMitigation(scanId) {
+  try {
+    // Show loading indicator
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '⏳ Generating...';
+    button.disabled = true;
+    
+    const response = await fetch(`/api/scan/${scanId}/mitigate`);
+    const data = await response.json();
+    
+    if (data.success) {
+      // Create a modal to display the mitigation report
+      showMitigationModal(data.report, data.filename);
+    } else {
+      alert('Error generating mitigation suggestions: ' + data.error);
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Failed to generate mitigation suggestions');
+  } finally {
+    // Restore button
+    const button = event.target;
+    button.innerHTML = originalText;
+    button.disabled = false;
+  }
+}
+
+// Show mitigation report in a modal
+function showMitigationModal(report, filename) {
+  // Create modal HTML
+  const modalHTML = `
+    <div id="mitigationModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+      <div class="bg-[#0f0f10] border border-[#8892BE] rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-[#8892BE]">🔧 Security Fixes for ${filename}</h2>
+            <button onclick="closeMitigationModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+          </div>
+          
+          <div class="mb-4 p-3 bg-[#1a1a1a] rounded border border-gray-700">
+            <div class="text-sm text-gray-300">
+              <strong>Summary:</strong> Found ${report.summary.total_vulnerabilities} vulnerabilities, generated ${report.summary.fixes_generated} fixes
+            </div>
+          </div>
+          
+          <div class="space-y-4">
+            ${report.fixes.map((fix, index) => `
+              <div class="border border-gray-700 rounded p-4">
+                <h3 class="text-lg font-semibold text-yellow-400 mb-2">Fix #${index + 1}: ${fix.type}</h3>
+                <div class="text-sm text-gray-400 mb-2">Line ${fix.line}</div>
+                
+                <div class="mb-3">
+                  <h4 class="text-sm font-semibold text-red-300 mb-1">Vulnerable Code:</h4>
+                  <pre class="bg-red-900 bg-opacity-20 p-3 rounded text-sm overflow-x-auto whitespace-pre-wrap break-words"><code>${fix.original}</code></pre>
+                </div>
+                
+                <div class="mb-3">
+                  <h4 class="text-sm font-semibold text-green-300 mb-1">Secure Fix:</h4>
+                  <pre class="bg-green-900 bg-opacity-20 p-3 rounded text-sm overflow-x-auto whitespace-pre-wrap break-words max-h-60 overflow-y-auto"><code>${fix.fixed}</code></pre>
+                </div>
+                
+                <div class="text-sm text-gray-300 leading-relaxed">
+                  <strong>Explanation:</strong> 
+                  <div class="mt-2 p-3 bg-gray-800 bg-opacity-50 rounded border-l-4 border-blue-400">
+                    ${fix.explanation}
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          
+          <div class="mt-6 text-center">
+            <button onclick="copyMitigationReport()" class="bg-[#8892BE] text-black px-4 py-2 rounded hover:bg-[#777BB3] transition-colors mr-2">
+              📋 Copy Report
+            </button>
+            <button onclick="closeMitigationModal()" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Add modal to page
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+  
+  // Store report data for copying
+  window.currentMitigationReport = report;
+}
+
+// Close mitigation modal
+function closeMitigationModal() {
+  const modal = document.getElementById('mitigationModal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+// Copy mitigation report to clipboard
+function copyMitigationReport() {
+  if (window.currentMitigationReport) {
+    navigator.clipboard.writeText(window.currentMitigationReport.report_text)
+      .then(() => {
+        alert('Mitigation report copied to clipboard!');
+      })
+      .catch(err => {
+        console.error('Failed to copy: ', err);
+        alert('Failed to copy report to clipboard');
+      });
   }
 }
 
