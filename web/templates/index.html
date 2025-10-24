@@ -171,8 +171,9 @@ input[type="file"] { display:none; }
 <div id="resultsContent">
 {% for r in results %}
 <div class="code-line" id="line-{{ r.line_num }}">
-  {% set is_comment = r.line.strip().startswith('//') or r.line.strip().startswith('/*') or r.line.strip().startswith('*') %}
-  {% if is_comment and r.label == 'safe' %}
+  {% set stripped_line = r.line.strip() %}
+  {% set is_comment = stripped_line.startswith('//') or stripped_line.startswith('/*') or (stripped_line.startswith('*') and not stripped_line.startswith('*/')) or stripped_line == '/*' or stripped_line.startswith('#') %}
+  {% if is_comment %}
     <span class="comment-line" onclick="jumpToFirstError({{ r.line_num }})" data-line="{{ r.line_num }}">
       <span class="line-number">{{ r.line_num }}</span>
       <span class="code">{{ r.line }}</span>
