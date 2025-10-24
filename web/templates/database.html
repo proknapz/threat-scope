@@ -171,7 +171,7 @@ body { background-color: #000; color: white; font-family: monospace; margin:0; p
                         <td>{{ stat.filename }}</td>
                         <td>{{ stat.scan_count }}</td>
                         <td class="text-red-400">{{ "%.1f"|format(stat.avg_unsafe) }}</td>
-                        <td>{{ stat.last_scanned.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ stat.last_scanned if stat.last_scanned else 'N/A' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

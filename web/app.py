@@ -175,12 +175,22 @@ def database_management():
     recent_scans = Scan.query.order_by(Scan.timestamp.desc()).limit(10).all()
     
     # File statistics
-    file_stats = db.session.query(
+    file_stats_raw = db.session.query(
         Scan.filename,
         db.func.count(Scan.id).label('scan_count'),
         db.func.avg(Scan.unsafe_lines).label('avg_unsafe'),
         db.func.max(Scan.timestamp).label('last_scanned')
     ).group_by(Scan.filename).order_by(db.func.count(Scan.id).desc()).all()
+    
+    # Convert Row objects to dictionaries for JSON serialization
+    file_stats = []
+    for row in file_stats_raw:
+        file_stats.append({
+            'filename': row.filename,
+            'scan_count': row.scan_count,
+            'avg_unsafe': float(row.avg_unsafe) if row.avg_unsafe else 0.0,
+            'last_scanned': row.last_scanned.isoformat() if row.last_scanned else None
+        })
     
     return render_template("database.html", 
                          total_scans=total_scans,
