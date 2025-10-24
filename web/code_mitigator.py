@@ -28,7 +28,7 @@ class CodeMitigator:
                 'type': 'SQL Injection - Direct Concatenation',
                 'original': original.strip(),
                 'fixed': fixed,
-                'explanation': 'Replaced direct concatenation with prepared statement to prevent SQL injection'
+                'explanation': 'Replaced direct string concatenation with prepared statements to prevent SQL injection. Direct concatenation allows user input to be interpreted as SQL code, enabling attackers to modify queries. Prepared statements use parameterized queries where user input is treated as data only, completely eliminating SQL injection vulnerabilities.'
             })
             
         # Pattern 2: mysql_query with variables
@@ -43,7 +43,7 @@ class CodeMitigator:
                 'type': 'SQL Injection - Deprecated Function',
                 'original': original.strip(),
                 'fixed': fixed,
-                'explanation': 'Replaced deprecated mysql_query with prepared statement using mysqli'
+                'explanation': 'Replaced deprecated mysql_query with prepared statement using mysqli. The mysql_query() function is deprecated and vulnerable to SQL injection. Prepared statements separate SQL code from data, preventing injection attacks by treating user input as data only, never as executable code. This approach is more secure and also provides better performance through query plan caching.'
             })
             
         # Pattern 3: Missing input validation
@@ -63,7 +63,7 @@ class CodeMitigator:
                     'type': 'Input Validation Missing',
                     'original': original.strip(),
                     'fixed': fixed,
-                    'explanation': 'Added input validation and sanitization to prevent malicious input'
+                    'explanation': 'Added input validation and sanitization using filter_var() to prevent malicious input. Raw user input from $_GET, $_POST, and $_REQUEST should never be used directly. Input validation ensures data meets expected format requirements, while sanitization removes potentially dangerous characters. This creates a defense-in-depth approach to security.'
                 })
                 
         return fixes

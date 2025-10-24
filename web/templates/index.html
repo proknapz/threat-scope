@@ -538,7 +538,7 @@ function showMitigationModal(report, filename) {
   // Create modal HTML
   const modalHTML = `
     <div id="mitigationModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-      <div class="bg-[#0f0f10] border border-[#8892BE] rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto">
+      <div class="bg-[#0f0f10] border border-[#8892BE] rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
         <div class="p-6">
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-xl font-bold text-[#8892BE]">🔧 Security Fixes for ${filename}</h2>
@@ -559,16 +559,19 @@ function showMitigationModal(report, filename) {
                 
                 <div class="mb-3">
                   <h4 class="text-sm font-semibold text-red-300 mb-1">Vulnerable Code:</h4>
-                  <pre class="bg-red-900 bg-opacity-20 p-2 rounded text-sm overflow-x-auto"><code>${fix.original}</code></pre>
+                  <pre class="bg-red-900 bg-opacity-20 p-3 rounded text-sm overflow-x-auto whitespace-pre-wrap break-words"><code>${fix.original}</code></pre>
                 </div>
                 
                 <div class="mb-3">
                   <h4 class="text-sm font-semibold text-green-300 mb-1">Secure Fix:</h4>
-                  <pre class="bg-green-900 bg-opacity-20 p-2 rounded text-sm overflow-x-auto"><code>${fix.fixed}</code></pre>
+                  <pre class="bg-green-900 bg-opacity-20 p-3 rounded text-sm overflow-x-auto whitespace-pre-wrap break-words max-h-60 overflow-y-auto"><code>${fix.fixed}</code></pre>
                 </div>
                 
-                <div class="text-sm text-gray-300">
-                  <strong>Explanation:</strong> ${fix.explanation}
+                <div class="text-sm text-gray-300 leading-relaxed">
+                  <strong>Explanation:</strong> 
+                  <div class="mt-2 p-3 bg-gray-800 bg-opacity-50 rounded border-l-4 border-blue-400">
+                    ${fix.explanation}
+                  </div>
                 </div>
               </div>
             `).join('')}
