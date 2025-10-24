@@ -141,7 +141,10 @@ PHP Vulnerability Scanner &copy; 2025
 <script>
 const fileInput = document.querySelector('input[type="file"]');
 const fileNameDiv = document.getElementById('selectedFileName');
+const uploadLabel = document.querySelector('label[for], label:has(input[type="file"])');
+const uploadForm = document.getElementById('uploadForm');
 
+// File selection change handler
 fileInput.addEventListener('change', () => {
     if (fileInput.files.length > 0) {
         fileNameDiv.textContent = "Selected file: " + fileInput.files[0].name;
@@ -149,10 +152,61 @@ fileInput.addEventListener('change', () => {
         fileNameDiv.textContent = "";
     }
 });
+
+// Drag and Drop functionality
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+  uploadForm.addEventListener(eventName, preventDefaults, false);
+});
+
+function preventDefaults(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+// Highlight drop area when dragging over it
+['dragenter', 'dragover'].forEach(eventName => {
+  uploadLabel.addEventListener(eventName, () => {
+    uploadLabel.style.borderColor = '#8892BE';
+    uploadLabel.style.backgroundColor = 'rgba(136, 146, 190, 0.1)';
+  }, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+  uploadLabel.addEventListener(eventName, () => {
+    uploadLabel.style.borderColor = '#777BB3';
+    uploadLabel.style.backgroundColor = '';
+  }, false);
+});
+
+// Handle dropped files
+uploadLabel.addEventListener('drop', (e) => {
+  const dt = e.dataTransfer;
+  const files = dt.files;
+  
+  if (files.length > 0) {
+    fileInput.files = files;
+    // Trigger change event
+    const event = new Event('change', { bubbles: true });
+    fileInput.dispatchEvent(event);
+  }
+}, false);
+
+// Toggle details AND scroll to line
 function toggleDetails(lineSpan) {
   const reportsSpan = lineSpan.nextElementSibling;
   if (reportsSpan && reportsSpan.classList.contains('reports')) {
-    reportsSpan.style.display = reportsSpan.style.display === 'inline' ? 'none' : 'inline';
+    const wasHidden = reportsSpan.style.display === 'none' || reportsSpan.style.display === '';
+    reportsSpan.style.display = wasHidden ? 'inline' : 'none';
+    
+    // Scroll to the line smoothly
+    if (wasHidden) {
+      lineSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Add temporary highlight
+      lineSpan.style.backgroundColor = 'rgba(179, 119, 149, 0.3)';
+      setTimeout(() => {
+        lineSpan.style.backgroundColor = '';
+      }, 1000);
+    }
   }
 }
 
