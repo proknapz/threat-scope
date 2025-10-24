@@ -28,15 +28,14 @@ input[type="file"] { display:none; }
   font-family: monospace;
   margin-top:1rem;
   font-size:0.85rem;
+  line-height: 1.2rem;
 }
 
 /* Code line container */
 .code-line {
   display: block;
-  padding: 0.15rem 0;
-  line-height: 1.4rem;
-  white-space: pre-wrap;
-  word-break: break-all;
+  margin: 0;
+  padding: 0;
 }
 
 .code-line:hover {
@@ -46,17 +45,15 @@ input[type="file"] { display:none; }
 /* Line number and code */
 .line-number { 
   color:#666; 
-  width:4ch; 
+  width:3ch; 
   display:inline-block; 
   text-align:right; 
   user-select:none;
   margin-right: 0.5rem;
-  font-weight: bold;
 }
 .code { 
   display:inline; 
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
 }
 .safe { color:#8892BE; }
 .unsafe { color:#b37795; cursor:pointer; }
@@ -64,21 +61,19 @@ input[type="file"] { display:none; }
 
 /* Reports - display on new line */
 .reports { 
-  font-size:0.75rem; 
+  font-size:0.7rem; 
   color:#f4c542; 
   display:none; 
-  margin-left:5ch;
-  padding: 0.3rem 0;
-  line-height:1.3rem;
+  margin-left:4ch;
+  padding: 0.15rem 0 0.15rem 0.5rem;
+  line-height:1.1rem;
   background-color: rgba(244, 197, 66, 0.05);
   border-left: 2px solid rgba(244, 197, 66, 0.3);
-  padding-left: 0.5rem;
-  margin-top: 0.2rem;
-  margin-bottom: 0.2rem;
 }
 .report { 
   display: block;
-  padding: 0.1rem 0;
+  margin: 0;
+  padding: 0;
 }
 .cursor-pointer { cursor:pointer; }
 
