@@ -59,6 +59,16 @@ input[type="file"] { display:none; }
 .unsafe { color:#b37795; cursor:pointer; }
 .unsafe:hover { background-color: rgba(179, 119, 149, 0.2); }
 
+/* Comment lines that can jump to code */
+.comment-line {
+  color: #7a8a9e;
+  cursor: pointer;
+}
+.comment-line:hover {
+  color: #8892BE;
+  text-decoration: underline;
+}
+
 /* Reports - display on new line */
 .reports { 
   font-size:0.7rem; 
@@ -161,16 +171,24 @@ input[type="file"] { display:none; }
 <div id="resultsContent">
 {% for r in results %}
 <div class="code-line" id="line-{{ r.line_num }}">
-  <span class="cursor-pointer {{ r.label }}" onclick="toggleDetails(this)" data-line="{{ r.line_num }}">
-    <span class="line-number">{{ r.line_num }}</span>
-    <span class="code {{ r.label }}">{{ r.line }}</span>
-  </span>
-  {% if r.reports %}
-  <div class="reports">
-    {% for rep in r.reports %}
-    <div class="report">🔸 <strong>{{ rep[0] }}</strong> - tainted={{ rep[1] }} ({{ rep[2] }})</div>
-    {% endfor %}
-  </div>
+  {% set is_comment = r.line.strip().startswith('//') or r.line.strip().startswith('/*') or r.line.strip().startswith('*') %}
+  {% if is_comment and r.label == 'safe' %}
+    <span class="comment-line" onclick="jumpToFirstError({{ r.line_num }})" data-line="{{ r.line_num }}">
+      <span class="line-number">{{ r.line_num }}</span>
+      <span class="code">{{ r.line }}</span>
+    </span>
+  {% else %}
+    <span class="cursor-pointer {{ r.label }}" onclick="toggleDetails(this)" data-line="{{ r.line_num }}">
+      <span class="line-number">{{ r.line_num }}</span>
+      <span class="code {{ r.label }}">{{ r.line }}</span>
+    </span>
+    {% if r.reports %}
+    <div class="reports">
+      {% for rep in r.reports %}
+      <div class="report">🔸 <strong>{{ rep[0] }}</strong> - tainted={{ rep[1] }} ({{ rep[2] }})</div>
+      {% endfor %}
+    </div>
+    {% endif %}
   {% endif %}
 </div>
 {% endfor %}
@@ -234,6 +252,46 @@ uploadLabel.addEventListener('drop', (e) => {
     fileInput.dispatchEvent(event);
   }
 }, false);
+
+// Jump to first error after a comment line
+function jumpToFirstError(commentLineNum) {
+  // Find all code-line divs
+  const allLines = document.querySelectorAll('.code-line');
+  
+  // Find the first unsafe line after this comment
+  let foundComment = false;
+  for (let line of allLines) {
+    const lineId = line.id;
+    const lineNum = parseInt(lineId.replace('line-', ''));
+    
+    if (lineNum > commentLineNum) {
+      const unsafeSpan = line.querySelector('.unsafe');
+      if (unsafeSpan) {
+        // Found the first error, scroll to it and highlight
+        line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Highlight it
+        line.style.backgroundColor = 'rgba(179, 119, 149, 0.25)';
+        line.style.borderLeft = '3px solid rgba(179, 119, 149, 0.7)';
+        line.style.paddingLeft = '0.3rem';
+        
+        // Show the reports
+        const reportsDiv = line.querySelector('.reports');
+        if (reportsDiv) {
+          reportsDiv.style.display = 'block';
+        }
+        
+        setTimeout(() => {
+          line.style.backgroundColor = '';
+          line.style.borderLeft = '';
+          line.style.paddingLeft = '';
+        }, 2000);
+        
+        return;
+      }
+    }
+  }
+}
 
 // Toggle details AND scroll to line
 function toggleDetails(clickedSpan) {
