@@ -6,11 +6,12 @@ import os
 import pickle
 from werkzeug.utils import secure_filename
 import sys
-from scripts.detect_lines import predict_file
+from scripts.detect_lines import predict_file, apply_fixes, read_file
 from code_mitigator import create_mitigator
 import pandas as pd
 from io import StringIO
 import csv
+import re
 
 UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {"php"}
@@ -97,6 +98,9 @@ def allowed_file(filename):
 def index():
     results = None
     filename = None
+    original_code = None
+    fixed_code = None
+    fixes_applied = None
 
     if request.method == "POST":
         file = request.files.get("file")
@@ -105,8 +109,17 @@ def index():
             filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             file.save(filepath)
             
+            # Read original code
+            original_code = read_file(filepath)
+            original_lines = original_code.splitlines()
+            
             # Run detection
             raw_results = predict_file(model, vectorizer, filepath, threshold=0.7)
+            
+            # Apply fixes
+            original_lines = original_code.splitlines()
+            fixed_lines, fixes_applied, fixed_line_nums = apply_fixes(original_lines, raw_results)
+            fixed_code = '\n'.join(fixed_lines)
             
             # Prepare results for template
             results = []
@@ -148,7 +161,11 @@ def index():
         "index.html",
         results=results,
         filename=filename,
-        past_scans=past_scans
+        past_scans=past_scans,
+        original_code=original_code,
+        fixed_code=fixed_code,
+        fixes_applied=fixes_applied,
+        fixed_line_nums=fixed_line_nums
     )
 
 @app.route("/scan/<int:scan_id>")

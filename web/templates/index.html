@@ -92,6 +92,144 @@ input[type="file"] { display:none; }
   border-radius: 0.25rem;
 }
 
+/* Code comparison view */
+.code-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.code-panel {
+  background-color: #0f0f10;
+  border: 1px solid #333;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.code-panel-header {
+  background-color: #1a1a1a;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #333;
+  font-weight: bold;
+}
+
+.code-panel.before .code-panel-header {
+  color: #b37795;
+  border-left: 4px solid #b37795;
+}
+
+.code-panel.after .code-panel-header {
+  color: #8892BE;
+  border-left: 4px solid #8892BE;
+}
+
+.code-content {
+  padding: 1rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  max-height: 600px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.code-line-before {
+  display: block;
+  margin: 0;
+  padding: 2px 0;
+}
+
+.code-line-before.unsafe-line {
+  background-color: rgba(179, 119, 149, 0.15);
+  border-left: 3px solid #b37795;
+  padding-left: 0.5rem;
+}
+
+.code-line-after {
+  display: block;
+  margin: 0;
+  padding: 2px 0;
+}
+
+.code-line-after.fixed-line {
+  background-color: rgba(136, 146, 190, 0.15);
+  border-left: 3px solid #8892BE;
+  padding-left: 0.5rem;
+}
+
+.line-num {
+  color: #666;
+  display: inline-block;
+  width: 4ch;
+  text-align: right;
+  margin-right: 1ch;
+  user-select: none;
+}
+
+/* Code comparison wrapper */
+.code-comparison-wrapper {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.code-window {
+  display: flex;
+  flex-direction: column;
+}
+
+.code-window-header {
+  background-color: #1a1a1a;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+  border: 1px solid #333;
+  border-bottom: none;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.code-window-header.before {
+  color: #b37795;
+  border-left: 4px solid #b37795;
+}
+
+.code-window-header.after {
+  color: #8892BE;
+  border-left: 4px solid #8892BE;
+}
+
+#resultsContent {
+  border-radius: 0 0 0.5rem 0.5rem;
+  border-top: none;
+}
+
+#fixedCodeContent {
+  max-height: 500px;
+  overflow-y: auto;
+  background-color: #0f0f10;
+  padding: 0.5rem 1rem;
+  border-radius: 0 0 0.5rem 0.5rem;
+  font-family: monospace;
+  margin-top: 0;
+  font-size: 0.85rem;
+  line-height: 1.2rem;
+  border: 1px solid #333;
+  border-top: none;
+}
+
+/* Fixed line highlighting in After window */
+.code-line.fixed-line {
+  background-color: rgba(34, 197, 94, 0.15);
+  border-left: 3px solid #22c55e;
+  padding-left: 0.5rem;
+}
+
+.code-line.fixed-line .code {
+  color: #22c55e;
+}
+
 </style>
 </head>
 <body class="flex flex-col items-center justify-start min-h-screen p-6">
@@ -175,6 +313,117 @@ input[type="file"] { display:none; }
 
 {% if results %}
 <h2 class="text-2xl font-bold mt-6 mb-2 text-[#8892BE]">Scan Results for {{ filename }}</h2>
+
+{% if fixed_code %}
+<div class="code-comparison-wrapper">
+  <!-- BEFORE Window (existing resultsContent) -->
+  <div class="code-window">
+    <div class="code-window-header before">
+      ⚠️ Before (Unsafe Code)
+      {% if fixes_applied %}
+      <span class="text-sm font-normal text-gray-400 ml-2">
+        ({{ fixes_applied|length }} issue(s))
+      </span>
+      {% endif %}
+    </div>
+    <div id="resultsContent">
+    {% for r in results %}
+    <div class="code-line" id="line-{{ r.line_num }}">
+      {% set stripped_line = r.line.strip() %}
+      {% set is_comment = stripped_line.startswith('//') or stripped_line.startswith('/*') or (stripped_line.startswith('*') and not stripped_line.startswith('*/')) or stripped_line == '/*' or stripped_line.startswith('#') %}
+      {% set is_descriptive = 'Uses a' in r.line or 'Input :' in r.line or 'SANITIZE :' in r.line or 'construction :' in r.line or 'execute a' in r.line or 'Flushes content' in r.line %}
+      
+      {% if is_comment or is_descriptive %}
+        <span class="comment-line" onclick="jumpToRelatedCode({{ r.line_num }}, '{{ r.line|e }}')" data-line="{{ r.line_num }}">
+          <span class="line-number">{{ r.line_num }}</span>
+          <span class="code {{ r.label }}">{{ r.line }}</span>
+        </span>
+      {% else %}
+        <span class="cursor-pointer {{ r.label }}" onclick="toggleDetails(this)" data-line="{{ r.line_num }}">
+          <span class="line-number">{{ r.line_num }}</span>
+          <span class="code {{ r.label }}">{{ r.line }}</span>
+        </span>
+        {% if r.reports %}
+        <div class="reports">
+          {% for rep in r.reports %}
+          <div class="report">🔸 <strong>{{ rep[0] }}</strong> - tainted={{ rep[1] }} ({{ rep[2] }})</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      {% endif %}
+    </div>
+    {% endfor %}
+    </div>
+  </div>
+  
+  <!-- AFTER Window (fixed code) -->
+  <div class="code-window">
+    <div class="code-window-header after">
+      ✅ After (Fixed Code)
+      {% if fixes_applied %}
+      <span class="text-sm font-normal text-gray-400 ml-2">
+        ({{ fixes_applied|length }} fix(es))
+      </span>
+      {% endif %}
+    </div>
+    <div id="fixedCodeContent">
+      {% set fixed_lines = fixed_code.split('\n') %}
+      {% for line_num in range(1, fixed_lines|length + 1) %}
+      {% set line = fixed_lines[line_num - 1] %}
+      {% set is_fixed = fixed_line_nums and line_num in fixed_line_nums %}
+      <div class="code-line {% if is_fixed %}fixed-line{% endif %}" id="fixed-line-{{ line_num }}">
+        <span class="line-number">{{ line_num }}</span>
+        <span class="code {% if is_fixed %}text-green-500{% else %}text-gray-300{% endif %}">{{ line|e }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- Fix Details -->
+{% if fixes_applied %}
+<div class="mt-4 w-full max-w-6xl bg-[#0f0f10] p-4 rounded border border-[#8892BE]">
+  <h3 class="text-lg font-bold mb-3 text-[#8892BE]">Fix Details</h3>
+  {% for fix in fixes_applied %}
+  <div class="mb-3 p-3 bg-[#1a1a1a] rounded border-l-4 border-yellow-500">
+    <div class="text-sm text-gray-400 mb-2">Line {{ fix[0] }}</div>
+    <div class="text-red-400 text-sm mb-1">
+      <strong>Original:</strong> <code>{{ fix[1]|e }}</code>
+    </div>
+    <div class="text-green-400 text-sm mb-1">
+      <strong>Fixed:</strong> <code>{{ fix[2]|e }}</code>
+    </div>
+    {% if fix[3] %}
+    <div class="text-xs text-yellow-400 mt-2">
+      <strong>Parameters to bind:</strong> {{ fix[3]|join(', ') }}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="mt-4 text-center">
+  <button onclick="downloadFixedCode()" class="btn">Download Fixed Code</button>
+</div>
+
+<script>
+function downloadFixedCode() {
+  const fixedCode = `{{ fixed_code|e }}`;
+  const blob = new Blob([fixedCode], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '{{ filename|replace(".php", "") }}_fixed.php';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+</script>
+
+{% else %}
+<!-- If no fixes, show only the before section (existing behavior) -->
 <div id="resultsContent">
 {% for r in results %}
 <div class="code-line" id="line-{{ r.line_num }}">
@@ -203,6 +452,8 @@ input[type="file"] { display:none; }
 </div>
 {% endfor %}
 </div>
+{% endif %}
+
 <a href="{{ url_for('index') }}" class="mt-2 inline-block btn">Upload another file</a>
 {% endif %}
 
