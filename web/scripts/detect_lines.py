@@ -118,11 +118,9 @@ def taint_analysis(lines):
             elif re.search(r'\b(SELECT|INSERT|UPDATE|DELETE)\b', rhs, re.IGNORECASE) and '$' in rhs:
                 # Has SQL keyword and variable, but check if it's direct usage (not concatenated)
                 # Pattern like: "SELECT ... WHERE id= $var" (no . operator)
-                if not re.search(r'["\']\s*\.\s*\$|\$\s*\.\s*["\']', rhs):
-                    # Direct variable usage in query string - treat as safe (might be parameterized or sanitized)
-                    tainted[var] = False
-                    reports.append((var, False, "SQL query with direct variable (treated as safe)"))
-                else:
+                # BUT: Variable interpolation in double-quoted strings is UNSAFE
+                # Pattern: "SELECT ... WHERE id=' $var '" - variable interpolation
+                if re.search(r'["\']\s*\.\s*\$|\$\s*\.\s*["\']', rhs):
                     # Has concatenation - check for tainted variables
                     has_sql_keyword = True
                     has_concatenation = True
@@ -138,6 +136,24 @@ def taint_analysis(lines):
                     if not any(tainted.get(u.lstrip('$'), False) for u in used_vars if u.lstrip('$')):
                         tainted[var] = True
                         reports.append((var, True, "SQL query construction detected"))
+                elif re.search(r'["\'].*\$\w+.*["\']', rhs):
+                    # Variable interpolation in double-quoted string - UNSAFE
+                    used_vars = VAR_USAGE_PAT.findall(rhs)
+                    for u in used_vars:
+                        u_name = u.lstrip('$')
+                        if u_name and tainted.get(u_name, False):
+                            # Mark query variable as tainted and report
+                            tainted[var] = True
+                            reports.append((u_name, True, "used in SQL query via variable interpolation while tainted"))
+                            break
+                    # If variable is in string but not tainted yet, still mark as potentially unsafe
+                    if used_vars and not any(tainted.get(u.lstrip('$'), False) for u in used_vars if u.lstrip('$')):
+                        tainted[var] = True
+                        reports.append((var, True, "SQL query with variable interpolation detected"))
+                else:
+                    # Direct variable usage in query string - treat as safe (might be parameterized or sanitized)
+                    tainted[var] = False
+                    reports.append((var, False, "SQL query with direct variable (treated as safe)"))
             # Check if this is a constant assignment (clears taint) - only if NO concatenation and NO SQL
             elif CONSTANT_ASSIGN_PAT.search(rhs) and not ('.' in rhs and '$' in rhs):
                 tainted[var] = False
@@ -203,6 +219,18 @@ def taint_analysis(lines):
                     if query_match:
                         query_var = query_match.group(1)
                         tainted[query_var] = True
+        # Check for variable interpolation in SQL query strings (e.g., "SELECT ... WHERE id=' $var '")
+        elif re.search(r'\$\w+\s*=\s*["\'].*\b(SELECT|INSERT|UPDATE|DELETE)\b.*\$\w+.*["\']', code, re.IGNORECASE):
+            used_vars = VAR_USAGE_PAT.findall(code)
+            for u in used_vars:
+                u_name = u.lstrip('$')
+                if u_name and tainted.get(u_name, False):
+                    reports.append((u_name, True, "used in SQL query via variable interpolation while tainted"))
+                    # Mark the query variable as tainted
+                    query_match = re.search(r'\$(\w+)\s*=\s*["\']', code)
+                    if query_match:
+                        query_var = query_match.group(1)
+                        tainted[query_var] = True
         # Fallback: Check for any query construction with SQL keywords and concatenation
         elif re.search(r'\$\w+\s*=\s*["\'].*\b(SELECT|INSERT|UPDATE|DELETE)\b', code, re.IGNORECASE):
             # Look for variables used in the query string with concatenation
@@ -211,7 +239,6 @@ def taint_analysis(lines):
                 u_name = u.lstrip('$')
                 if u_name and tainted.get(u_name, False):
                     # Check if variable is used in string concatenation (unsafe)
-                    # Match: "..." . $var or $var . "..." or "..." . $var . "..."
                     if re.search(r'["\']\s*\.\s*\$\w+|\$\w+\s*\.\s*["\']', code):
                         reports.append((u_name, True, "used in SQL query construction while tainted"))
                         query_match = re.search(r'\$(\w+)\s*=\s*["\']', code)
@@ -366,6 +393,38 @@ def fix_sprintf_unsafe(line):
     
     return None, []
 
+def fix_variable_interpolation_unsafe(line):
+    """
+    Fix unsafe SQL query construction with variable interpolation in double-quoted strings.
+    Converts: $query = "SELECT ... WHERE id=' $tainted '";
+    To: $query = "SELECT ... WHERE id='?'";
+    Returns fixed line and list of parameters to bind
+    """
+    # Pattern: $var = "SELECT...WHERE id=' $tainted '"
+    # Match SQL query with variable interpolation in double-quoted string
+    pattern = r'(\$\w+)\s*=\s*"([^"]*\b(SELECT|INSERT|UPDATE|DELETE)\b[^"]*)(\$\w+)([^"]*)"\s*;'
+    match = re.search(pattern, line, re.IGNORECASE | re.DOTALL)
+    
+    if match:
+        var, query_part1, sql_keyword, tainted_var, query_part2 = match.groups()
+        # Replace the variable with placeholder
+        # Need to preserve the quotes around the placeholder
+        # Find where the variable appears and replace it with ?
+        fixed_query = query_part1 + '?' + query_part2
+        return f'{var} = "{fixed_query}";', [tainted_var]
+    
+    # Pattern: $var = "SELECT...WHERE id=' $tainted '"; (with single quotes around variable)
+    pattern2 = r'(\$\w+)\s*=\s*"([^"]*\b(SELECT|INSERT|UPDATE|DELETE)\b[^"]*)[\'"]\s*(\$\w+)\s*[\'"]([^"]*)"\s*;'
+    match2 = re.search(pattern2, line, re.IGNORECASE | re.DOTALL)
+    
+    if match2:
+        var, query_part1, sql_keyword, tainted_var, query_part2 = match2.groups()
+        # Replace variable with placeholder, preserving quotes
+        fixed_query = query_part1 + "'?'" + query_part2
+        return f'{var} = "{fixed_query}";', [tainted_var]
+    
+    return None, []
+
 def fix_mysql_query_unsafe(line, query_var, params):
     """
     Fix unsafe mysql_query usage by converting to prepared statements.
@@ -406,7 +465,7 @@ def fix_unsafe_line(line, reports, context_lines=None):
     
     # Check if this is an unsafe SQL query construction
     for report in reports:
-        if report[1] and "SQL query construction" in report[2]:
+        if report[1] and "SQL query" in report[2]:
             # Try to fix query concatenation
             fixed, line_params = fix_unsafe_query_concatenation(line)
             if fixed:
@@ -416,6 +475,13 @@ def fix_unsafe_line(line, reports, context_lines=None):
             
             # Try to fix sprintf
             fixed, line_params = fix_sprintf_unsafe(line)
+            if fixed:
+                fixed_lines.append(fixed)
+                params.extend(line_params)
+                break
+            
+            # Try to fix variable interpolation
+            fixed, line_params = fix_variable_interpolation_unsafe(line)
             if fixed:
                 fixed_lines.append(fixed)
                 params.extend(line_params)
