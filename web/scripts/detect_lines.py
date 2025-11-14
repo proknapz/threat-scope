@@ -119,7 +119,11 @@ def predict_file(model, vectorizer, php_path, threshold=0.5):
     taint_reports, _ = taint_analysis(lines)
 
     results = []
+    in_block = False  # Track block comment state
     for idx, (line, prob) in enumerate(zip(lines, probs), start=1):
+        # Check if this line is a comment
+        is_comment, in_block = _is_comment_only(line, in_block)
+        
         reports = taint_reports.get(idx, [])
         tainted_in_sql = any(r[1] and "SQL" in r[2].upper() for r in reports)
 
@@ -130,7 +134,10 @@ def predict_file(model, vectorizer, php_path, threshold=0.5):
         )
         is_resource_assignment = 'proc_open' in line or 'fopen' in line
 
-        if tainted_in_sql:
+        if is_comment:
+            # Comments are always safe
+            label = "safe"
+        elif tainted_in_sql:
             label = "unsafe"
         elif is_constant_assignment or is_resource_assignment:
             # Override ML if it's a safe assignment
