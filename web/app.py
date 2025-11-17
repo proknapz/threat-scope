@@ -101,6 +101,7 @@ def index():
     original_code = None
     fixed_code = None
     fixes_applied = None
+    fixed_line_nums = None
 
     if request.method == "POST":
         file = request.files.get("file")
