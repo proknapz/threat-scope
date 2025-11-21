@@ -353,6 +353,9 @@ def fix_unsafe_query_concatenation(line):
     
     if match:
         var, quote1, query_part1, tainted_var, quote2, query_part2 = match.groups()
+        # Clean up extracted parts (remove trailing/leading quotes if present)
+        query_part1 = re.sub(r"['\"]\s*$", "", query_part1)
+        query_part2 = re.sub(r"^\s*['\"]", "", query_part2)
         # Replace concatenated variable with placeholder
         fixed_query = f'{var} = {quote1}{query_part1}?{query_part2}{quote1};'
         return fixed_query, [tainted_var]
@@ -370,7 +373,7 @@ def fix_unsafe_query_concatenation(line):
     match3 = re.search(pattern3, line, re.IGNORECASE | re.DOTALL)
     if match3:
         var, tainted_var, quote, query_part = match3.groups()
-        fixed_query = f'{var} = {quote}?{query_part}{quote};'
+        fixed_query = f'{var} = ?{query_part};'
         return fixed_query, [tainted_var]
     
     return None, []
@@ -410,7 +413,7 @@ def fix_variable_interpolation_unsafe(line):
         # Replace the variable with placeholder
         # Need to preserve the quotes around the placeholder
         # Find where the variable appears and replace it with ?
-        fixed_query = query_part1 + '?' + query_part2
+        fixed_query = query_part1 + "?" + query_part2
         return f'{var} = "{fixed_query}";', [tainted_var]
     
     # Pattern: $var = "SELECT...WHERE id=' $tainted '"; (with single quotes around variable)
@@ -420,7 +423,7 @@ def fix_variable_interpolation_unsafe(line):
     if match2:
         var, query_part1, sql_keyword, tainted_var, query_part2 = match2.groups()
         # Replace variable with placeholder, preserving quotes
-        fixed_query = query_part1 + "'?'" + query_part2
+        fixed_query = query_part1 + "?" + query_part2
         return f'{var} = "{fixed_query}";', [tainted_var]
     
     return None, []
