@@ -1,9 +1,9 @@
 <?php
 /* 
 Unsafe sample
-input : use exec to execute the script /tmp/tainted.php and store the output in $tainted
-sanitize : none
-construction : concatenation with simple quote
+input : execute a ls command using the function system, and put the last result in $tainted
+SANITIZE : use of mysql_real_escape string
+construction : interpretation
 */
 
 
@@ -42,14 +42,11 @@ OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR
 MODIFICATIONS.*/
 
 
-$script = "/tmp/tainted.php";
-exec($script, $result, $return);
+$tainted = system('ls', $retval);
 
-$tainted = $result[0];
+$tainted = mysql_real_escape_string($tainted);
 
-//no_sanitizing
-
-$query = "SELECT * FROM '". $tainted . "'";
+$query = "SELECT * FROM COURSE c WHERE c.id IN (SELECT idcourse FROM REGISTRATION WHERE idstudent= $tainted )";
 
 //flaw
 $conn = mysql_connect('localhost', 'mysql_user', 'mysql_password'); // Connection to the database (address, user, password)

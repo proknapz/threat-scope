@@ -72,6 +72,7 @@ body { background-color: #000; color: white; font-family: monospace; margin:0; p
         <div class="space-x-2">
             <a href="/" class="btn">Back to Scanner</a>
             <a href="/api/export/csv" class="btn">Export CSV</a>
+            <button onclick="deleteAllScans()" class="btn btn-danger">🗑️ Delete All Scans</button>
         </div>
     </div>
 
@@ -656,6 +657,31 @@ function deleteScan(scanId) {
         .catch(error => {
             alert('Error deleting scan: ' + error);
         });
+    }
+}
+
+// Delete all scans function
+function deleteAllScans() {
+    const confirmMessage = 'Are you sure you want to DELETE ALL SCANS? This action cannot be undone!';
+    if (confirm(confirmMessage)) {
+        // Double confirmation for safety
+        if (confirm('This will permanently delete all scan data. Are you ABSOLUTELY sure?')) {
+            fetch('/api/scans/delete-all', {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`Success: ${data.message}\nDeleted ${data.deleted_count} scans.`);
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                alert('Error deleting all scans: ' + error);
+            });
+        }
     }
 }
 </script>

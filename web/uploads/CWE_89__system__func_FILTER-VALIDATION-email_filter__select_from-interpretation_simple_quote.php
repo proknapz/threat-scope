@@ -1,9 +1,9 @@
 <?php
 /* 
 Unsafe sample
-input : get the $_GET['userData'] in an array
-sanitize : regular expression accepts everything
-construction : use of sprintf via a %s with simple quote
+input : execute a ls command using the function system, and put the last result in $tainted
+Flushes content of $sanitized if the filter email_filter is not applied
+construction : interpretation with simple quote
 */
 
 
@@ -42,21 +42,14 @@ OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR
 MODIFICATIONS.*/
 
 
-$array = array();
-$array[] = 'safe' ;
-$array[] = $_GET['userData'] ;
-$array[] = 'safe' ;
-$tainted = $array[1] ;
+$tainted = system('ls', $retval);
 
-$re = "/^.*$/";
-if(preg_match($re, $tainted) == 1){
-  $tainted = $tainted;
-}
-else{
-  $tainted = "";
-}
+if (filter_var($sanitized, FILTER_VALIDATE_EMAIL))
+  $tainted = $sanitized ;
+else
+  $tainted = "" ;
 
-$query = sprintf("SELECT * FROM '%s'", $tainted);
+$query = "SELECT * FROM ' $tainted '";
 
 //flaw
 $conn = mysql_connect('localhost', 'mysql_user', 'mysql_password'); // Connection to the database (address, user, password)

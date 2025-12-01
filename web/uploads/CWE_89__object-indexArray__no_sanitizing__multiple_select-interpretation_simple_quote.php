@@ -1,9 +1,9 @@
 <?php
 /* 
 Unsafe sample
-input : Get a serialize string in POST and unserialize it
-Flushes content of $sanitized if the filter email_filter is not applied
-construction : use of sprintf via a %s with simple quote
+input : get the field userData from the variable $_GET via an object, which store it in a array
+sanitize : none
+construction : interpretation with simple quote
 */
 
 
@@ -42,16 +42,26 @@ OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR
 MODIFICATIONS.*/
 
 
-$string = $_POST['UserData'] ;
-$tainted = unserialize($string);
-    
+class Input{
+  private $input;
 
-if (filter_var($sanitized, FILTER_VALIDATE_EMAIL))
-  $tainted = $sanitized ;
-else
-  $tainted = "" ;
+  public function getInput(){
+    return $this->input['realOne'];
+  }
 
-$query = sprintf("SELECT * FROM '%s'", $tainted);
+  public  function __construct(){
+    $this->input = array();
+    $this->input['test']= 'safe' ;
+    $this->input['realOne']= $_GET['UserData'] ;
+    $this->input['trap']= 'safe' ;
+  }
+}
+$temp = new Input();
+$tainted =  $temp->getInput();
+
+//no_sanitizing
+
+$query = "SELECT * FROM COURSE c WHERE c.id IN (SELECT idcourse FROM REGISTRATION WHERE idstudent=' $tainted ')";
 
 //flaw
 $conn = mysql_connect('localhost', 'mysql_user', 'mysql_password'); // Connection to the database (address, user, password)

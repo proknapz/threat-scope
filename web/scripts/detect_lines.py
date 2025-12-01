@@ -495,52 +495,96 @@ def fix_unsafe_line(line, reports, context_lines=None):
 def apply_fixes(lines, results):
     """
     Apply fixes to unsafe lines and return the fixed code.
+    Returns: (fixed_lines, fixes_applied, fixed_line_nums_in_output)
     """
     fixed_lines = lines.copy()
     fixes_applied = []
-    fixed_line_nums = set()  # Track all line numbers that are part of fixes
+    fixed_line_nums = set()  # Track line numbers that were fixed (in the output)
     query_vars = {}  # Track query variables and their parameters
     
-    for idx, line, label, prob, reports in results:
+    # Sort results by line number to ensure we process fixes in order
+    sorted_results = sorted(results, key=lambda x: x[0])
+    
+    # First pass: identify query variables and their parameters
+    for idx, line, label, prob, reports in sorted_results:
         if label == "unsafe" and reports:
             fixed, params = fix_unsafe_line(line, reports)
             if fixed:
-                # Apply the first fix (most common case)
-                fixed_lines[idx - 1] = fixed[0]  # idx is 1-based, list is 0-based
-                fixes_applied.append((idx, line, fixed[0], params))
-                fixed_line_nums.add(idx)  # Mark original line as fixed
-                
-                # If fix spans multiple lines, mark all new lines as fixed
-                if '\n' in fixed[0]:
-                    # Count how many lines the fix spans
-                    fix_line_count = fixed[0].count('\n') + 1
-                    for i in range(idx, idx + fix_line_count):
-                        fixed_line_nums.add(i)
-                
                 # Track query variables for mysql_query fixes
                 query_match = re.search(r'\$(\w+)\s*=\s*["\']', line)
                 if query_match:
                     query_var = query_match.group(1)
                     query_vars[query_var] = params
     
-    # Now fix mysql_query calls that use the fixed query variables
-    for idx, line, label, prob, reports in results:
+    # Second pass: apply all fixes in order
+    line_offset = 0  # Track cumulative line offset due to multi-line expansions
+    
+    for idx, line, label, prob, reports in sorted_results:
         if label == "unsafe":
-            # Check if this is a mysql_query line
-            for query_var, params in query_vars.items():
-                if query_var in line and 'mysql_query' in line:
-                    fixed = fix_mysql_query_unsafe(line, query_var, params)
-                    if fixed:
-                        fixed_lines[idx - 1] = fixed
-                        fixes_applied.append((idx, line, fixed, params))
-                        fixed_line_nums.add(idx)  # Mark original line as fixed
+            fixed_code = None
+            params = []
+            
+            # Try to get fix from fix_unsafe_line first
+            if reports:
+                fixed, params = fix_unsafe_line(line, reports)
+                if fixed:
+                    fixed_code = fixed[0]
+            
+            # Check if this is a mysql_query line that needs fixing
+            if not fixed_code:
+                for query_var, query_params in query_vars.items():
+                    if query_var in line and 'mysql_query' in line:
+                        fixed_code = fix_mysql_query_unsafe(line, query_var, query_params)
+                        params = query_params
+                        break
+            
+            if fixed_code:
+                # Replace newlines with spaces first
+                fixed_single_line = fixed_code.replace('\n', ' ')
+                
+                # Calculate position in the output (accounting for previous expansions)
+                output_position = idx - 1 + line_offset  # -1 because idx is 1-based
+                
+                # Check if this fix has multiple statements (indicated by semicolons)
+                # Split on semicolons and create separate lines
+                if ';' in fixed_single_line:
+                    # Split by semicolon, keeping the semicolon with each statement
+                    statements = []
+                    parts = fixed_single_line.split(';')
+                    for i, part in enumerate(parts):
+                        part = part.strip()
+                        if part:  # Skip empty parts
+                            if i < len(parts) - 1:  # Add semicolon back except for last part
+                                statements.append(part + ';')
+                            else:
+                                statements.append(part)
+                    
+                    if len(statements) > 1:
+                        # Multi-line fix: replace first line and insert others
+                        fixed_lines[output_position] = statements[0]
                         
-                        # If fix spans multiple lines, mark all new lines as fixed
-                        if '\n' in fixed:
-                            fix_line_count = fixed.count('\n') + 1
-                            for i in range(idx, idx + fix_line_count):
-                                fixed_line_nums.add(i)
-                    break
+                        # Insert additional lines
+                        for i, stmt in enumerate(statements[1:], start=1):
+                            fixed_lines.insert(output_position + i, stmt)
+                        
+                        # Mark all lines as fixed (1-based line numbers in output)
+                        # Use output_position + 1 because output_position is 0-based
+                        for i in range(len(statements)):
+                            fixed_line_nums.add(output_position + 1 + i)
+                        
+                        # Update offset for future fixes
+                        line_offset += (len(statements) - 1)
+                    else:
+                        # Single statement with semicolon
+                        fixed_lines[output_position] = fixed_single_line
+                        fixed_line_nums.add(output_position + 1)
+                else:
+                    # No semicolons, single-line fix
+                    fixed_lines[output_position] = fixed_single_line
+                    fixed_line_nums.add(output_position + 1)
+                
+                # Store the original single-line version for Fix Details
+                fixes_applied.append((idx, line, fixed_single_line, params))
     
     return fixed_lines, fixes_applied, fixed_line_nums
 

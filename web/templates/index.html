@@ -237,57 +237,11 @@ input[type="file"] { display:none; }
 <h1 class="text-3xl font-bold mb-4 text-[#8892BE] text-center">PHP Vulnerability Scanner</h1>
 <!-- NAVIGATION PANEL -->
 <div class="w-full max-w-2xl mb-4">
-  <div class="flex border-b border-gray-700">
-    <button class="tab-btn font-bold text-[#8892BE] px-4 py-2" data-tab="uploadTab">Upload</button>
-    <button class="tab-btn text-gray-400 px-4 py-2" data-tab="historyTab">Past Scans</button>
-    <a href="/database" class="tab-btn text-gray-400 px-4 py-2 hover:text-[#8892BE]">Database</a>
+  <div class="flex gap-4 border-b border-gray-700 pb-2">
+    <span class="font-bold text-[#8892BE] px-4 py-2">Upload</span>
+    <a href="/scans" class="text-gray-400 px-4 py-2 hover:text-[#8892BE] transition-colors">Past Scans</a>
+    <a href="/database" class="text-gray-400 px-4 py-2 hover:text-[#8892BE] transition-colors">Database</a>
   </div>
-
- 
-  <div id="uploadTab" class="tab-content">
-     
-  </div>
-    <div id="historyTab" class="tab-content hidden">
-      {% if past_scans %}
-        <div class="space-y-2">
-          {% for scan in past_scans %}
-            <div class="bg-[#0f0f10] p-3 rounded border border-gray-700 hover:border-[#8892BE] transition-colors">
-              <div class="flex justify-between items-start">
-                <div class="flex-1">
-                  <a href="{{ url_for('view_scan', scan_id=scan.id) }}" class="text-[#8892BE] hover:underline font-medium">
-                    {{ scan.filename }}
-                  </a>
-                  <div class="text-sm text-gray-400 mt-1">
-                    {{ scan.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
-                  </div>
-                  <div class="text-xs text-gray-500 mt-1">
-                    {% if scan.total_lines > 0 %}
-                      {% set rate = (scan.unsafe_lines / scan.total_lines * 100) %}
-                      {{ scan.total_lines }} lines | {{ scan.unsafe_lines }} unsafe | 
-                      <span class="{% if rate > 50 %}text-red-400{% elif rate > 20 %}text-yellow-400{% else %}text-green-400{% endif %}">
-                        {{ "%.1f"|format(rate) }}% vulnerability rate
-                      </span>
-                    {% endif %}
-                  </div>
-                  {% if scan.unsafe_lines > 0 %}
-                  <div class="mt-2">
-                    <button onclick="generateMitigation({{ scan.id }})" class="text-xs bg-[#8892BE] text-black px-2 py-1 rounded hover:bg-[#777BB3] transition-colors">
-                      🔧 Generate Fixes
-                    </button>
-                  </div>
-                  {% endif %}
-                </div>
-                <div class="text-xs text-gray-500">
-                  {{ "%.1f"|format(scan.file_size / 1024) }} KB
-                </div>
-              </div>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <p class="text-gray-400 mt-2">No past scans yet.</p>
-      {% endif %}
-    </div>
 </div>
 
 <form id="uploadForm" method="post" enctype="multipart/form-data" class="w-full max-w-2xl">
@@ -314,19 +268,97 @@ input[type="file"] { display:none; }
 {% if results %}
 <h2 class="text-2xl font-bold mt-6 mb-2 text-[#8892BE]">Scan Results for {{ filename }}</h2>
 
-{% if fixed_code %}
+<!-- Check if all lines are safe (no vulnerabilities) -->
+{% set has_vulnerabilities = results|selectattr('label', 'equalto', 'unsafe')|list|length > 0 %}
+
+{% if not has_vulnerabilities %}
+<!-- SUCCESS MESSAGE: No vulnerabilities found -->
+<div class="w-full max-w-6xl bg-green-900 bg-opacity-20 border-2 border-green-500 rounded-lg p-6 mb-6">
+  <div class="flex items-center justify-center">
+    <svg class="h-16 w-16 text-green-400 mr-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+    <div>
+      <h3 class="text-2xl font-bold text-green-400 mb-2">✅ No Vulnerabilities Detected!</h3>
+      <p class="text-green-300 text-lg">Your PHP code appears to be secure. No SQL injection vulnerabilities were found.</p>
+      <p class="text-green-200 text-sm mt-2">Scanned {{ results|length }} lines of code.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Still show the code for reference -->
+<div class="w-full max-w-6xl mb-4">
+  <button onclick="toggleCodeView()" class="btn mb-2">
+    <span id="toggleIcon">▼</span> View Code Details
+  </button>
+  <div id="cleanCodeView" style="display: none;">
+    <div class="code-window">
+      <div class="code-window-header after">
+        ✅ Clean Code (No Issues Found)
+      </div>
+      <div id="resultsContent">
+      {% for r in results %}
+      <div class="code-line">
+        <span class="line-number">{{ r.line_num }}</span>
+        <span class="code safe">{{ r.line }}</span>
+      </div>
+      {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleCodeView() {
+  const codeView = document.getElementById('cleanCodeView');
+  const icon = document.getElementById('toggleIcon');
+  if (codeView.style.display === 'none') {
+    codeView.style.display = 'block';
+    icon.textContent = '▲';
+  } else {
+    codeView.style.display = 'none';
+    icon.textContent = '▼';
+  }
+}
+</script>
+
+{% elif fixed_code %}
+<!-- DISCLAIMER BANNER -->
+<div class="w-full max-w-6xl bg-yellow-900 bg-opacity-20 border-2 border-yellow-500 rounded-lg p-4 mb-4">
+  <div class="flex items-start">
+    <svg class="h-6 w-6 text-yellow-400 mr-3 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+    <div>
+      <h3 class="text-lg font-bold text-yellow-400 mb-1">⚠️ Automated Fix Disclaimer</h3>
+      <p class="text-yellow-200 text-sm">
+        The fixes shown are <strong>automated suggestions</strong> based on common SQL injection patterns. 
+        While we handle the most common vulnerabilities, <strong>manual code review is recommended</strong> before deploying to production.
+        Complex queries or edge cases may require additional security measures.
+      </p>
+      <p class="text-yellow-300 text-xs mt-2">
+        ✓ Covers: Direct concatenation, deprecated mysql_* functions, missing prepared statements<br>
+        ⚠ May need review: Complex queries, stored procedures, dynamic table names
+      </p>
+    </div>
+  </div>
+</div>
+
 <div class="code-comparison-wrapper">
   <!-- BEFORE Window (existing resultsContent) -->
   <div class="code-window">
-    <div class="code-window-header before">
-      ⚠️ Before (Unsafe Code)
-      {% if fixes_applied %}
-      <span class="text-sm font-normal text-gray-400 ml-2">
-        ({{ fixes_applied|length }} issue(s))
-      </span>
-      {% endif %}
+    <div class="code-window-header before" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="toggleBeforeCode()">
+      <div>
+        ⚠️ Before (Unsafe Code)
+        {% if fixes_applied %}
+        <span class="text-sm font-normal text-gray-400 ml-2">
+          ({{ fixes_applied|length }} issue(s))
+        </span>
+        {% endif %}
+      </div>
+      <span id="beforeToggle" class="text-xl">▼</span>
     </div>
-    <div id="resultsContent">
+    <div id="resultsContent" style="display: block;">
     {% for r in results %}
     <div class="code-line" id="line-{{ r.line_num }}">
       {% set stripped_line = r.line.strip() %}
@@ -358,15 +390,18 @@ input[type="file"] { display:none; }
   
   <!-- AFTER Window (fixed code) -->
   <div class="code-window">
-    <div class="code-window-header after">
-      ✅ After (Fixed Code)
-      {% if fixes_applied %}
-      <span class="text-sm font-normal text-gray-400 ml-2">
-        ({{ fixes_applied|length }} fix(es))
-      </span>
-      {% endif %}
+    <div class="code-window-header after" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="toggleAfterCode()">
+      <div>
+        ✅ After (Fixed Code)
+        {% if fixes_applied %}
+        <span class="text-sm font-normal text-gray-400 ml-2">
+          ({{ fixes_applied|length }} fix(es))
+        </span>
+        {% endif %}
+      </div>
+      <span id="afterToggle" class="text-xl">▼</span>
     </div>
-    <div id="fixedCodeContent">
+    <div id="fixedCodeContent" style="display: block;">
       {% set fixed_lines = fixed_code.split('\n') %}
       {% for line_num in range(1, fixed_lines|length + 1) %}
       {% set line = fixed_lines[line_num - 1] %}
@@ -409,7 +444,18 @@ input[type="file"] { display:none; }
 
 <script>
 function downloadFixedCode() {
-  const fixedCode = `{{ fixed_code|e }}`;
+  // Get all code lines from the fixed code section
+  const fixedCodeContainer = document.querySelector('#fixedCodeContent');
+  if (!fixedCodeContainer) {
+    alert('Fixed code not found');
+    return;
+  }
+  
+  // Extract text from each .code span (this automatically decodes HTML entities)
+  const codeSpans = fixedCodeContainer.querySelectorAll('.code');
+  const lines = Array.from(codeSpans).map(span => span.textContent);
+  const fixedCode = lines.join('\n');
+  
   const blob = new Blob([fixedCode], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -725,6 +771,32 @@ function jumpToRelatedCode(commentLineNum, commentText) {
   console.log('No matching code found for comment:', commentText);
 }
 
+// Toggle Before code section
+function toggleBeforeCode() {
+  const content = document.getElementById('resultsContent');
+  const toggle = document.getElementById('beforeToggle');
+  if (content.style.display === 'none') {
+    content.style.display = 'block';
+    toggle.textContent = '▼';
+  } else {
+    content.style.display = 'none';
+    toggle.textContent = '▶';
+  }
+}
+
+// Toggle After code section
+function toggleAfterCode() {
+  const content = document.getElementById('fixedCodeContent');
+  const toggle = document.getElementById('afterToggle');
+  if (content.style.display === 'none') {
+    content.style.display = 'block';
+    toggle.textContent = '▼';
+  } else {
+    content.style.display = 'none';
+    toggle.textContent = '▶';
+  }
+}
+
 // Toggle details AND scroll to line
 function toggleDetails(clickedSpan) {
   // Find the parent code-line div
@@ -756,16 +828,25 @@ function toggleDetails(clickedSpan) {
 }
 
 // Generate mitigation suggestions for a scan
-async function generateMitigation(scanId) {
+async function generateMitigation(scanId, buttonElement) {
   try {
+    console.log('🔍 generateMitigation called with scanId:', scanId);
+    
     // Show loading indicator
-    const button = event.target;
+    const button = buttonElement;
     const originalText = button.innerHTML;
     button.innerHTML = '⏳ Generating...';
     button.disabled = true;
     
-    const response = await fetch(`/api/scan/${scanId}/mitigate`);
+    const url = `/api/scan/${scanId}/mitigate`;
+    console.log('📡 Fetching from URL:', url);
+    
+    const response = await fetch(url);
     const data = await response.json();
+    
+    console.log('📦 Received data:', data);
+    console.log('📄 Filename:', data.filename);
+    console.log('🔧 Number of fixes:', data.report?.fixes?.length);
     
     if (data.success) {
       // Create a modal to display the mitigation report
@@ -778,9 +859,10 @@ async function generateMitigation(scanId) {
     alert('Failed to generate mitigation suggestions');
   } finally {
     // Restore button
-    const button = event.target;
-    button.innerHTML = originalText;
-    button.disabled = false;
+    if (buttonElement) {
+      buttonElement.innerHTML = originalText;
+      buttonElement.disabled = false;
+    }
   }
 }
 
@@ -870,31 +952,7 @@ function copyMitigationReport() {
   }
 }
 
-const tabs = document.querySelectorAll('.tab-btn');
-const contents = document.querySelectorAll('.tab-content');
-
-tabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    // Remove active styles from all tabs
-    tabs.forEach(t => t.classList.remove('active', 'font-bold', 'text-[#8892BE]'));
-    tabs.forEach(t => t.classList.add('text-gray-400'));
-
-    // Hide all tab contents
-    contents.forEach(c => c.classList.add('hidden'));
-
-    // Show selected tab content
-    const target = document.getElementById(tab.dataset.tab);
-    target.classList.remove('hidden');
-
-    // Highlight active tab
-    tab.classList.add('active', 'font-bold', 'text-[#8892BE]');
-    tab.classList.remove('text-gray-400');
-  });
-});
-
-
-tabs.forEach(tab => tab.classList.remove('active'));
-tab.classList.add('active');
+// Tab switching removed - using separate pages now
 </script>
 
 

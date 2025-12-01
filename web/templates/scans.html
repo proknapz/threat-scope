@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Past Scans - PHP Vulnerability Scanner</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { background-color: #000; color: white; font-family: monospace; margin:0; padding:0; }
+
+.btn { background-color: #8892BE; color: black; padding:0.5rem 1rem; border-radius:0.25rem; cursor:pointer; transition: all 0.2s; }
+.btn:hover { background-color:#777BB3; transform: translateY(-1px); }
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0f0f10; }
+::-webkit-scrollbar-thumb { background: #8892BE; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #777BB3; }
+</style>
+</head>
+<body class="flex flex-col items-center justify-start min-h-screen p-4 pt-12">
+
+<h1 class="text-4xl font-bold mb-2 text-[#8892BE]">🔍 Past Scans</h1>
+<p class="text-gray-400 mb-6">View and manage your previous vulnerability scans</p>
+
+<!-- Navigation -->
+<div class="w-full max-w-4xl mb-6">
+  <div class="flex gap-4 border-b border-gray-700 pb-2">
+    <a href="/" class="text-gray-400 hover:text-[#8892BE] transition-colors">← Back to Upload</a>
+    <a href="/database" class="text-gray-400 hover:text-[#8892BE] transition-colors">Database →</a>
+  </div>
+</div>
+
+<!-- Past Scans List -->
+<div class="w-full max-w-4xl">
+  {% if past_scans %}
+    <div class="space-y-3">
+      {% for scan in past_scans %}
+        <div class="bg-[#0f0f10] p-4 rounded-lg border border-gray-700 hover:border-[#8892BE] transition-colors">
+          <div class="flex justify-between items-start">
+            <div class="flex-1">
+              <a href="{{ url_for('view_scan', scan_id=scan.id) }}" class="text-[#8892BE] hover:underline font-medium text-lg">
+                📄 {{ scan.filename }}
+              </a>
+              <div class="text-sm text-gray-400 mt-2">
+                🕒 {{ scan.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+              </div>
+              <div class="text-sm text-gray-500 mt-2 flex gap-4">
+                {% if scan.total_lines > 0 %}
+                  {% set rate = (scan.unsafe_lines / scan.total_lines * 100) %}
+                  <span>📊 {{ scan.total_lines }} lines</span>
+                  <span class="{% if scan.unsafe_lines > 0 %}text-red-400{% else %}text-green-400{% endif %}">
+                    ⚠️  {{ scan.unsafe_lines }} unsafe
+                  </span>
+                  <span class="{% if rate > 50 %}text-red-400{% elif rate > 20 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                    📈 {{ "%.1f"|format(rate) }}% vulnerability rate
+                  </span>
+                {% endif %}
+              </div>
+              {% if scan.unsafe_lines > 0 %}
+              <div class="mt-3">
+                <button onclick="generateMitigation({{ scan.id }}, this)" class="bg-[#8892BE] text-black px-3 py-2 rounded hover:bg-[#777BB3] transition-colors font-medium">
+                  🔧 View Fixes
+                </button>
+              </div>
+              {% else %}
+              <div class="mt-3">
+                <span class="text-green-400 text-sm">✅ No vulnerabilities found</span>
+              </div>
+              {% endif %}
+            </div>
+            <div class="text-sm text-gray-500">
+              💾 {{ "%.1f"|format(scan.file_size / 1024) }} KB
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="bg-[#0f0f10] p-8 rounded-lg border border-gray-700 text-center">
+      <p class="text-gray-400 text-lg">No past scans yet.</p>
+      <p class="text-gray-500 mt-2">Upload a PHP file to get started!</p>
+      <a href="/" class="inline-block mt-4 btn">Upload File</a>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Mitigation Modal (same as index.html) -->
+<div id="mitigationModalContainer"></div>
+
+<script>
+async function generateMitigation(scanId, buttonElement) {
+  // Store original text BEFORE any changes
+  const originalText = buttonElement.innerHTML;
+  
+  try {
+    console.log('🔍 generateMitigation called with scanId:', scanId);
+    
+    // Show loading indicator
+    buttonElement.innerHTML = '⏳ Loading...';
+    buttonElement.disabled = true;
+
+    const response = await fetch(`/api/scan/${scanId}/mitigate`);
+    const data = await response.json();
+    
+    console.log('📦 Response data:', data);
+
+    if (data.success) {
+      showMitigationModal(data.report, data.filename);
+    } else {
+      alert('Error generating fixes: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Failed to generate mitigation report: ' + error.message);
+  } finally {
+    // Always restore button to original state
+    buttonElement.innerHTML = originalText;
+    buttonElement.disabled = false;
+  }
+}
+
+function showMitigationModal(report, filename) {
+  // Create modal HTML
+  const modalHTML = `
+    <div id="mitigationModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+      <div class="bg-[#0f0f10] border border-[#8892BE] rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-[#8892BE]">🔧 Security Fixes for ${filename}</h2>
+            <button onclick="closeMitigationModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+          </div>
+          
+          <div class="mb-4 p-3 bg-[#1a1a1a] rounded border border-gray-700">
+            <div class="text-sm text-gray-300">
+              <strong>Summary:</strong> Found ${report.summary.total_vulnerabilities} vulnerabilities, generated ${report.summary.fixes_generated} fixes
+            </div>
+          </div>
+          
+          <div class="space-y-4">
+            ${report.fixes.map((fix, index) => `
+              <div class="border border-gray-700 rounded p-4">
+                <h3 class="text-lg font-semibold text-yellow-400 mb-2">Fix #${index + 1}: ${fix.type}</h3>
+                <div class="text-sm text-gray-400 mb-2">Line ${fix.line}</div>
+                
+                <div class="mb-3">
+                  <h4 class="text-sm font-semibold text-red-300 mb-1">Vulnerable Code:</h4>
+                  <pre class="bg-red-900 bg-opacity-20 p-3 rounded text-sm overflow-x-auto whitespace-pre-wrap break-words"><code>${fix.original}</code></pre>
+                </div>
+                
+                <div class="mb-3">
+                  <h4 class="text-sm font-semibold text-green-300 mb-1">Secure Fix:</h4>
+                  <pre class="bg-green-900 bg-opacity-20 p-3 rounded text-sm overflow-x-auto whitespace-pre-wrap break-words max-h-60 overflow-y-auto"><code>${fix.fixed}</code></pre>
+                </div>
+                
+                <div class="text-sm text-gray-300 leading-relaxed">
+                  <strong>Explanation:</strong> 
+                  <div class="mt-2 p-3 bg-gray-800 bg-opacity-50 rounded border-l-4 border-blue-400">
+                    ${fix.explanation}
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          
+          <div class="mt-6 text-center">
+            <button onclick="copyMitigationReport()" class="bg-[#8892BE] text-black px-4 py-2 rounded hover:bg-[#777BB3] transition-colors mr-2">
+              📋 Copy Report
+            </button>
+            <button onclick="closeMitigationModal()" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.getElementById('mitigationModalContainer').innerHTML = modalHTML;
+}
+
+function closeMitigationModal() {
+  document.getElementById('mitigationModalContainer').innerHTML = '';
+}
+
+function copyMitigationReport() {
+  const modalContent = document.querySelector('#mitigationModal .p-6').innerText;
+  navigator.clipboard.writeText(modalContent).then(() => {
+    alert('Report copied to clipboard!');
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+  });
+}
+</script>
+
+</body>
+</html>

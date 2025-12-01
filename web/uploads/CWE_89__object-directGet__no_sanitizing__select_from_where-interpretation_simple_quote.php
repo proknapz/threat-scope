@@ -1,9 +1,9 @@
 <?php
 /* 
 Unsafe sample
-input : use exec to execute the script /tmp/tainted.php and store the output in $tainted
-Uses a full_special_chars_filter via filter_var function
-construction : use of sprintf via a %s with simple quote
+input : get the field userData from the variable $_GET via an object
+sanitize : none
+construction : interpretation with simple quote
 */
 
 
@@ -42,16 +42,18 @@ OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR
 MODIFICATIONS.*/
 
 
-$script = "/tmp/tainted.php";
-exec($script, $result, $return);
+class Input{
+  public function getInput(){
+    return $_GET['UserData'] ;
+  }
+}
 
-$tainted = $result[0];
+$temp = new Input();
+$tainted =  $temp->getInput();
 
-$sanitized = filter_var($tainted, FILTER_SANITIZE_FULL_SPECIAL_CHARS);
-  $tainted = $sanitized ;
-     
+//no_sanitizing
 
-$query = sprintf("SELECT lastname, firstname FROM drivers, vehicles WHERE drivers.id = vehicles.ownerid AND vehicles.tag='%s'", $tainted);
+$query = "SELECT * FROM student where id=' $tainted '";
 
 //flaw
 $conn = mysql_connect('localhost', 'mysql_user', 'mysql_password'); // Connection to the database (address, user, password)

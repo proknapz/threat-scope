@@ -1,9 +1,9 @@
 <?php
 /* 
 Unsafe sample
-input : get the $_GET['userData'] in an array
-sanitize : regular expression accepts everything
-construction : interpretation with simple quote
+input : get the field userData from the variable $_GET via an object, which store it in a array
+sanitize : none
+construction : use of sprintf via a %s with simple quote
 */
 
 
@@ -42,21 +42,26 @@ OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR
 MODIFICATIONS.*/
 
 
-$array = array();
-$array[] = 'safe' ;
-$array[] = $_GET['userData'] ;
-$array[] = 'safe' ;
-$tainted = $array[1] ;
+class Input{
+  private $input;
 
-$re = "/^.*$/";
-if(preg_match($re, $tainted) == 1){
-  $tainted = $tainted;
-}
-else{
-  $tainted = "";
-}
+  public function getInput(){
+    return $this->input[1];
+  }
 
-$query = "SELECT lastname, firstname FROM drivers, vehicles WHERE drivers.id = vehicles.ownerid AND vehicles.tag=' $tainted '";
+  public  function __construct(){
+    $this->input = array();
+    $this->input[0]= 'safe' ;
+    $this->input[1]= $_GET['UserData'] ;
+    $this->input[2]= 'safe' ;
+  }
+}
+$temp = new Input();
+$tainted =  $temp->getInput();
+
+//no_sanitizing
+
+$query = sprintf("SELECT * FROM COURSE c WHERE c.id IN (SELECT idcourse FROM REGISTRATION WHERE idstudent='%s')", $tainted);
 
 //flaw
 $conn = mysql_connect('localhost', 'mysql_user', 'mysql_password'); // Connection to the database (address, user, password)

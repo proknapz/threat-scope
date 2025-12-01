@@ -1,7 +1,7 @@
 <?php
 /* 
 Unsafe sample
-input : get the $_GET['userData'] in an array
+input : use fopen to read /tmp/tainted.txt and put the first line in $tainted
 Uses an email_filter via filter_var function
 construction : concatenation with simple quote
 */
@@ -42,11 +42,16 @@ OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR
 MODIFICATIONS.*/
 
 
-$array = array();
-$array[] = 'safe' ;
-$array[] = $_GET['userData'] ;
-$array[] = 'safe' ;
-$tainted = $array[1] ;
+$handle = @fopen("/tmp/tainted.txt", "r");
+
+if ($handle) {
+  if(($tainted = fgets($handle, 4096)) == false) {
+    $tainted = "";
+  }
+  fclose($handle);
+} else {
+  $tainted = "";
+}
 
 $sanitized = filter_var($tainted, FILTER_SANITIZE_EMAIL);
 if (filter_var($sanitized, FILTER_VALIDATE_EMAIL))

@@ -8,6 +8,7 @@ from werkzeug.utils import secure_filename
 import sys
 from scripts.detect_lines import predict_file, apply_fixes, read_file
 from code_mitigator import create_mitigator
+from fix_validator import validate_fixes
 import pandas as pd
 from io import StringIO
 import csv
@@ -36,6 +37,7 @@ class Scan(db.Model):
     filename = db.Column(db.String(255), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     results = db.Column(db.Text)
+    fixes = db.Column(db.Text)  # Store generated fixes as JSON
     total_lines = db.Column(db.Integer, default=0)
     unsafe_lines = db.Column(db.Integer, default=0)
     safe_lines = db.Column(db.Integer, default=0)
@@ -122,6 +124,12 @@ def index():
             fixed_lines, fixes_applied, fixed_line_nums = apply_fixes(original_lines, raw_results)
             fixed_code = '\n'.join(fixed_lines)
             
+            # Debug: Log fixed line numbers and fixes
+            app.logger.warning(f"🔧 Fixed line numbers: {sorted(fixed_line_nums)}")
+            for line_num, original, fixed, params in fixes_applied:
+                fix_lines = fixed.count('\n') + 1
+                app.logger.warning(f"   Line {line_num}: {fix_lines} line(s) - {fixed[:50]}...")
+            
             # Prepare results for template
             results = []
             unsafe_count = 0
@@ -142,10 +150,46 @@ def index():
             # Get file size
             file_size = os.path.getsize(filepath)
 
-            # Save scan to database with statistics
+            # Convert fixes_applied to the modal format
+            fix_report = {
+                'summary': {
+                    'total_vulnerabilities': unsafe_count,
+                    'fixes_generated': len(fixes_applied) if fixes_applied else 0
+                },
+                'fixes': []
+            }
+            
+            if fixes_applied:
+                for line_num, original, fixed, params in fixes_applied:
+                    # Determine fix type based on the code
+                    if 'mysql_query' in original:
+                        fix_type = 'SQL Injection - Deprecated Function'
+                        explanation = 'Replaced deprecated mysql_query with prepared statement using mysqli. The mysql_query() function is deprecated and vulnerable to SQL injection. Prepared statements separate SQL code from data, preventing injection attacks by treating user input as data only, never as executable code. This approach is more secure and also provides better performance through query plan caching.'
+                    elif re.search(r'\$\w+\s*=\s*["\'][^"\']*\$\w+[^"\']*["\']', original):
+                        fix_type = 'SQL Injection - Variable Interpolation'
+                        interpolated_vars = re.findall(r'\$(\w+)', original)
+                        var_list = ", ".join([f"${v}" for v in interpolated_vars if v not in ['query', 'sql', 'stmt', 'result']])
+                        explanation = f'Variable interpolation in SQL queries is dangerous. The original code embedded {var_list} directly in the SQL string, which allows attackers to inject malicious SQL. Use prepared statements with parameter binding (? placeholders) instead of embedding variables directly in SQL strings.'
+                    else:
+                        fix_type = 'SQL Injection - Direct Concatenation'
+                        # Extract concatenated variables
+                        concat_vars = re.findall(r'\.\s*\$(\w+)', original)
+                        var_list = ", ".join([f"${v}" for v in concat_vars])
+                        explanation = f'Replaced direct string concatenation with prepared statements to prevent SQL injection. The original code concatenated {var_list} directly into the SQL query, which allows attackers to inject malicious SQL. The fix uses parameterized queries with ? placeholders where user input is treated as data only.'
+                    
+                    fix_report['fixes'].append({
+                        'line': line_num,
+                        'type': fix_type,
+                        'original': original,
+                        'fixed': fixed,
+                        'explanation': explanation
+                    })
+
+            # Save scan to database with statistics and fixes
             scan_entry = Scan(
                 filename=filename,
                 results=json.dumps(results),
+                fixes=json.dumps(fix_report),  # Store the complete fix report
                 total_lines=len(raw_results),
                 unsafe_lines=unsafe_count,
                 safe_lines=safe_count,
@@ -166,7 +210,7 @@ def index():
         original_code=original_code,
         fixed_code=fixed_code,
         fixes_applied=fixes_applied,
-        fixed_line_nums=fixed_line_nums
+        fixed_line_nums=list(fixed_line_nums) if fixed_line_nums else []
     )
 
 @app.route("/scan/<int:scan_id>")
@@ -180,6 +224,12 @@ def view_scan(scan_id):
         filename=scan.filename,
         past_scans=past_scans
     )
+
+@app.route("/scans")
+def past_scans_page():
+    """Past scans page"""
+    past_scans = Scan.query.order_by(Scan.timestamp.desc()).all()
+    return render_template("scans.html", past_scans=past_scans)
 
 @app.route("/database")
 def database_management():
@@ -277,6 +327,25 @@ def delete_scan(scan_id):
     db.session.delete(scan)
     db.session.commit()
     return jsonify({'message': 'Scan deleted successfully'})
+
+@app.route("/api/scans/delete-all", methods=['DELETE'])
+def delete_all_scans():
+    """Delete all scans from the database"""
+    try:
+        deleted_count = Scan.query.count()
+        Scan.query.delete()
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': 'All scans deleted successfully',
+            'deleted_count': deleted_count
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route("/api/stats")
 def api_stats():
@@ -409,19 +478,25 @@ def api_stats():
 
 @app.route('/api/scan/<int:scan_id>/mitigate', methods=['GET'])
 def mitigate_vulnerabilities(scan_id):
-    """Generate mitigation suggestions for a specific scan"""
+    """Retrieve stored mitigation suggestions for a specific scan"""
     try:
         scan = Scan.query.get_or_404(scan_id)
         
-        # Parse the scan results
-        scan_results = json.loads(scan.results)
-        
-        # Create mitigator and analyze vulnerabilities
-        mitigator = create_mitigator()
-        fixes = mitigator.analyze_and_fix_vulnerabilities(scan_results)
-        
-        # Generate comprehensive report
-        report = mitigator.generate_fix_report(fixes, scan.filename)
+        # Retrieve stored fixes instead of regenerating
+        if scan.fixes:
+            report = json.loads(scan.fixes)
+            app.logger.warning(f"✅ Retrieved stored fixes for scan #{scan_id}")
+        else:
+            # Fallback: generate fixes if not stored (for old scans)
+            app.logger.warning(f"⚠️  No stored fixes found for scan #{scan_id}, generating...")
+            scan_results = json.loads(scan.results)
+            mitigator = create_mitigator()
+            fixes = mitigator.analyze_and_fix_vulnerabilities(scan_results)
+            report = mitigator.generate_fix_report(fixes, scan.filename)
+            
+            # Store for future use
+            scan.fixes = json.dumps(report)
+            db.session.commit()
         
         return jsonify({
             'success': True,
