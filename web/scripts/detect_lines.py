@@ -37,14 +37,38 @@ def normalize_php(code):
 # -----------------------------
 # Simple taint analysis
 # -----------------------------
-SUPERGLOBAL_PAT = re.compile(r'\$_(GET|POST|REQUEST|COOKIE|FILES)\s*\[', re.IGNORECASE)
+# User-controlled superglobals: $_GET, $_POST, $_REQUEST, $_COOKIE, $_FILES,
+# and dangerous $_SERVER keys that are populated from HTTP request headers or
+# URL components and therefore user-controlled.
+SUPERGLOBAL_PAT = re.compile(
+    r'\$_(GET|POST|REQUEST|COOKIE|FILES)\s*\['
+    r'|\$_SERVER\s*\[\s*["\']'
+    r'(?:HTTP_\w+|QUERY_STRING|PATH_INFO|PHP_SELF|REQUEST_URI|DOCUMENT_URI|ORIG_PATH_INFO|REMOTE_ADDR)',
+    re.IGNORECASE,
+)
 ASSIGN_PAT = re.compile(r'\$([A-Za-z_]\w*)\s*=\s*(.+?)(;|$)')  # Allow assignment without semicolon (for if/else blocks)
 ARRAY_ASSIGN_PAT = re.compile(r'\$([A-Za-z_]\w*)\s*\[\s*.*?\s*\]\s*=\s*(.+?)(;|$)')  # Array assignment
 ARRAY_APPEND_PAT = re.compile(r'\$([A-Za-z_]\w*)\s*\[\s*\]\s*=\s*(.+?)(;|$)')  # Array append
 ARRAY_ACCESS_PAT = re.compile(r'\$([A-Za-z_]\w*)\s*\[\s*[^\]]+\s*\]')  # Array element access
 CAST_PAT = re.compile(r'\(\s*(int|integer|float|double|real)\s*\)')
 VAR_USAGE_PAT = re.compile(r'\$[A-Za-z_]\w*')
-SQL_USE_PAT = re.compile(r'\b(mysql_query|mysqli_query|pdo->query|->query|prepare|execute)\b|\bSELECT\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b', re.IGNORECASE)
+# SQL execution sinks: classic mysql_*, mysqli_*, PDO, and other DB drivers
+SQL_USE_PAT = re.compile(
+    r'\b(mysql_query|mysqli_query|pdo->query|->query|prepare|execute'
+    r'|pg_query|pg_execute|mssql_query|sqlite_query|oci_execute|db2_exec|sqlsrv_query|sqlsrv_execute)\b'
+    r'|\bSELECT\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b',
+    re.IGNORECASE,
+)
+# Command-execution sinks (CWE-78 — OS Command Injection)
+CMD_SINK_PAT = re.compile(
+    r'\b(exec|system|shell_exec|passthru|popen|proc_open|pcntl_exec)\s*\(',
+    re.IGNORECASE,
+)
+# File-inclusion sinks (CWE-98 — PHP Remote/Local File Inclusion)
+FILE_INCLUDE_PAT = re.compile(
+    r'\b(include|require|include_once|require_once)\s*[\(\s]',
+    re.IGNORECASE,
+)
 # Match unsafe string concatenation in queries - look for . $var . pattern after SQL keywords
 # This pattern matches: $var = "SELECT..." . $var or $var = "SELECT..." . $var . "..."
 UNSAFE_QUERY_CONSTRUCTION_PAT = re.compile(
@@ -64,8 +88,12 @@ CONSTANT_ASSIGN_PAT = re.compile(r'=\s*(["\'].*["\']|\d+(\.\d+)?|true|false|null
 # -----------------------------
 # Sanitizer regexes (split)
 # -----------------------------
-# SQL-safe sanitizers (clear SQL taint)
-SQL_SANITIZERS = re.compile(r'\b(mysqli_real_escape_string|PDO::quote|addslashes)\s*\(', re.IGNORECASE)
+# SQL-safe sanitizers (clear SQL taint): includes both old mysql_* and modern equivalents,
+# plus numeric-coercion functions that guarantee a safe integer/float value.
+SQL_SANITIZERS = re.compile(
+    r'\b(mysqli_real_escape_string|mysql_real_escape_string|PDO::quote|addslashes|intval|floatval|intdiv)\s*\(',
+    re.IGNORECASE,
+)
 # HTML-only sanitizers (DO NOT clear SQL taint)
 HTML_ONLY_SANITIZERS = re.compile(r'\b(filter_var|htmlspecialchars|htmlentities|FILTER_SANITIZE_FULL_SPECIAL_CHARS|FILTER_SANITIZE_STRING)\b', re.IGNORECASE)
 
@@ -108,12 +136,13 @@ def taint_analysis(lines):
                 # SQL-safe sanitizer or cast: clear taint
                 tainted[var] = False
                 reports.append((var, False, "sanitized/casted (SQL-safe)"))
-            # Check for sprintf with %s - treat as safe if user wants (or you can make this conditional)
+            # sprintf with %s is NOT safe — a string placeholder passes user input verbatim
             elif re.search(r'sprintf\s*\([^)]*%s', rhs, re.IGNORECASE):
-                # sprintf with %s - marking as safe per user requirement
-                # If you want to flag this as unsafe, remove this elif block
-                tainted[var] = False
-                reports.append((var, False, "assigned via sprintf (treated as safe)"))
+                used_vars = VAR_USAGE_PAT.findall(rhs)
+                any_tainted = any(tainted.get(u.lstrip('$'), False) for u in used_vars if u.lstrip('$'))
+                tainted[var] = any_tainted
+                if any_tainted:
+                    reports.append((var, True, "assigned via sprintf %s with tainted input (still tainted)"))
             # Check for SQL query with direct variable (no concatenation operator) - treat as potentially safe
             elif re.search(r'\b(SELECT|INSERT|UPDATE|DELETE)\b', rhs, re.IGNORECASE) and '$' in rhs:
                 # Has SQL keyword and variable, but check if it's direct usage (not concatenated)
@@ -180,17 +209,18 @@ def taint_analysis(lines):
                     else:
                         tainted.setdefault(var, False)
                 else:
-                    # propagate taint from used vars if present
+                    # propagate taint from used vars — if ANY used variable is tainted the
+                    # result is tainted (OR semantics prevents taint laundering via concatenation)
                     used_vars = VAR_USAGE_PAT.findall(rhs)
-                    inherited = None
-                    for u in used_vars:
-                        u_name = u.lstrip('$')
-                        if u_name in tainted:
-                            inherited = tainted[u_name]
-                            break
-                    if inherited is not None:
-                        tainted[var] = inherited
-                        reports.append((var, inherited, f"inherits from {used_vars[0]}"))
+                    any_known = any(u.lstrip('$') in tainted for u in used_vars if u.lstrip('$'))
+                    if any_known:
+                        any_tainted = any(tainted.get(u.lstrip('$'), False) for u in used_vars if u.lstrip('$'))
+                        tainted[var] = any_tainted
+                        if any_tainted:
+                            tainted_src = next(u for u in used_vars if tainted.get(u.lstrip('$'), False))
+                            reports.append((var, True, f"inherits taint from {tainted_src}"))
+                        else:
+                            reports.append((var, False, f"inherits from {used_vars[0]}"))
                     else:
                         tainted.setdefault(var, False)
 
@@ -257,6 +287,30 @@ def taint_analysis(lines):
                         reports.append((u_name, True, "used in SQL/exec while tainted"))
                     else:
                         reports.append((u_name, False, "used in SQL/exec"))
+
+        # Check command injection sinks (CWE-78)
+        if CMD_SINK_PAT.search(code):
+            used_vars = VAR_USAGE_PAT.findall(code)
+            for u in used_vars:
+                u_name = u.lstrip('$')
+                if u_name:
+                    is_tainted = tainted.get(u_name, False)
+                    if is_tainted:
+                        reports.append((u_name, True, "used in command execution while tainted"))
+                    else:
+                        reports.append((u_name, False, "used in command execution"))
+
+        # Check file inclusion sinks (CWE-98)
+        if FILE_INCLUDE_PAT.search(code):
+            used_vars = VAR_USAGE_PAT.findall(code)
+            for u in used_vars:
+                u_name = u.lstrip('$')
+                if u_name:
+                    is_tainted = tainted.get(u_name, False)
+                    if is_tainted:
+                        reports.append((u_name, True, "used in file inclusion while tainted"))
+                    else:
+                        reports.append((u_name, False, "used in file inclusion"))
         if reports:
             line_reports[idx] = reports
 
@@ -283,18 +337,20 @@ def predict_file(model, vectorizer, php_path, threshold=0.5):
         
         reports = taint_reports.get(idx, [])
         tainted_in_sql = any(r[1] and "SQL" in r[2].upper() for r in reports)
+        tainted_in_cmd = any(r[1] and "COMMAND EXECUTION" in r[2].upper() for r in reports)
+        tainted_in_include = any(r[1] and "FILE INCLUSION" in r[2].upper() for r in reports)
 
         # New: detect pure constant assignments or resource assignments
         is_constant_assignment = re.match(
             r'\s*\$[A-Za-z_]\w*\s*=\s*(["\'].*["\']|\d+(\.\d+)?|true|false|null|\[.*\])\s*;', 
             line, re.IGNORECASE
         )
-        is_resource_assignment = 'proc_open' in line or 'fopen' in line
+        is_resource_assignment = 'fopen' in line
 
         if is_comment:
             # Comments are always safe
             label = "safe"
-        elif tainted_in_sql:
+        elif tainted_in_sql or tainted_in_cmd or tainted_in_include:
             label = "unsafe"
         elif is_constant_assignment or is_resource_assignment:
             # Override ML if it's a safe assignment
