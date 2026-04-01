@@ -345,7 +345,7 @@ def predict_file(model, vectorizer, php_path, threshold=0.5):
             r'\s*\$[A-Za-z_]\w*\s*=\s*(["\'].*["\']|\d+(\.\d+)?|true|false|null|\[.*\])\s*;', 
             line, re.IGNORECASE
         )
-        is_resource_assignment = 'fopen' in line
+        is_resource_assignment = bool(re.search(r'\bfopen\s*\(', line))
 
         if is_comment:
             # Comments are always safe

@@ -110,10 +110,11 @@ $safe_price = floatval($raw_price);
 $price_query = "SELECT * FROM products WHERE price > " . $safe_price;
 mysqli_query($conn, $price_query);
 
-// UNSAFE: mysql_real_escape_string was previously not in sanitiser list;
-// it IS a SQL sanitiser, so the result should now be safe
+// SAFE: mysql_real_escape_string is now recognised as a SQL sanitiser,
+// so the escaped variable itself is clean (taint is cleared on line 116).
+// Note: prepared statements are still the preferred approach.
 $raw_name = $_GET['name'];
-$escaped_name = mysql_real_escape_string($raw_name);
+$escaped_name = mysql_real_escape_string($raw_name);  // taint cleared here
 $name_query = "SELECT * FROM users WHERE name = '" . $escaped_name . "'";
 mysql_query($name_query);
 

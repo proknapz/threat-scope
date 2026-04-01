@@ -184,7 +184,7 @@ def predict_file(model, vectorizer, php_path, threshold=0.5):
             r'\s*\$[A-Za-z_]\w*\s*=\s*(["\'].*["\']|\d+(\.\d+)?|true|false|null|\[.*\])\s*;', 
             line, re.IGNORECASE
         )
-        is_resource_assignment = 'fopen' in line
+        is_resource_assignment = bool(re.search(r'\bfopen\s*\(', line))
 
         if tainted_in_sql or tainted_in_cmd or tainted_in_include:
             label = "unsafe"
